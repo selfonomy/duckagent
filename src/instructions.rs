@@ -351,15 +351,27 @@ fn extract_blocks(text: &str) -> Vec<DynamicContextBlock> {
 }
 
 fn parse_block_body(body: &str) -> Option<(String, String)> {
-    let body = body.trim_matches('\n');
-    let path_line = body.lines().next()?.trim();
+    let body = body.trim_matches(['\n', '\r']);
+    let mut lines = body.lines();
+    let path_line = lines.next()?.trim();
     let id = path_line
         .strip_prefix("id: ")
         .or_else(|| path_line.strip_prefix("path: "))?
         .trim()
         .to_string();
-    let content_start = body.find("\n\n")? + 2;
-    let content = body[content_start..].trim().to_string();
+    let mut saw_separator = false;
+    let mut content_lines = Vec::new();
+    for line in lines {
+        if saw_separator {
+            content_lines.push(line);
+        } else if line.trim().is_empty() {
+            saw_separator = true;
+        }
+    }
+    if !saw_separator {
+        return None;
+    }
+    let content = content_lines.join("\n").trim().to_string();
     if id.is_empty() || content.is_empty() {
         return None;
     }
@@ -443,6 +455,29 @@ mod tests {
             &session_id,
             SessionRole::User,
             "[PROJECT INSTRUCTIONS]\npath: /tmp/project/AGENTS.md\n\nbe concise\n[/PROJECT INSTRUCTIONS]",
+        )?;
+        let block = DynamicContextBlock {
+            id: "/tmp/project/AGENTS.md".to_string(),
+            label: "PROJECT INSTRUCTIONS".to_string(),
+            content: "be concise".to_string(),
+        };
+        let second = compose_user_message_with_blocks(
+            "again",
+            &[block],
+            &manager.get_all_messages(&session_id)?,
+        )?;
+        assert_eq!(second, "again");
+        Ok(())
+    }
+
+    #[test]
+    fn crlf_dynamic_context_block_is_not_repeated() -> Result<()> {
+        let manager = SessionManager::new(tempdir()?.keep())?;
+        let session_id = manager.create_session(Some("demo"), "system")?;
+        manager.append_text_message(
+            &session_id,
+            SessionRole::User,
+            "[PROJECT INSTRUCTIONS]\r\nid: /tmp/project/AGENTS.md\r\n\r\nbe concise\r\n[/PROJECT INSTRUCTIONS]",
         )?;
         let block = DynamicContextBlock {
             id: "/tmp/project/AGENTS.md".to_string(),

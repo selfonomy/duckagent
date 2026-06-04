@@ -543,12 +543,9 @@ mod tests {
         let workspace_text = normalize_path_text(workspace);
         let args = build_bwrap_args(&sandbox, "true", &[], workspace, BTreeMap::new())?;
         assert!(args.windows(3).any(|window| {
-            window
-                == [
-                    "--bind".to_string(),
-                    workspace_text.clone(),
-                    workspace_text.clone(),
-                ]
+            window[0] == "--bind"
+                && normalize_path_text(Path::new(&window[1])) == workspace_text
+                && normalize_path_text(Path::new(&window[2])) == workspace_text
         }));
         assert!(args.windows(3).any(|window| {
             window == ["--ro-bind".to_string(), "/".to_string(), "/".to_string()]
