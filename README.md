@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/selfonomy/duckagent/actions/workflows/ci.yml"><img src="https://github.com/selfonomy/duckagent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="https://selfonomy.github.io/duckagent/"><img src="https://img.shields.io/badge/Docs-GitHub%20Pages-0ea5e9?style=for-the-badge&logo=github" alt="Documentation"></a>
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/License-Apache--2.0-green?style=for-the-badge" alt="License: Apache-2.0"></a>
 </p>
