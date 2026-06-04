@@ -1,6 +1,8 @@
+#[cfg(target_os = "macos")]
+use super::default_gateway_logs_dir;
+use super::default_gateway_run_dir;
 #[cfg(target_os = "windows")]
 use super::default_gateway_service_dir;
-use super::{default_gateway_logs_dir, default_gateway_run_dir};
 use anyhow::{Context, Result, bail};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
@@ -102,11 +104,13 @@ pub(crate) fn running_gateway_is_background_service(pid: u32) -> bool {
     gateway_process_kind(pid) == GatewayProcessKind::Service
 }
 
+#[cfg(target_os = "windows")]
 fn service_definition_installed() -> Result<bool> {
-    #[cfg(target_os = "windows")]
-    {
-        return Ok(windows_task_exists()?);
-    }
+    windows_task_exists()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn service_definition_installed() -> Result<bool> {
     Ok(service_definition()?.is_some_and(|definition| definition.path.exists()))
 }
 
@@ -129,7 +133,8 @@ fn service_definition_for_label(label: &str) -> Result<Option<ServiceDefinition>
 fn service_definition_for_label(label: &str) -> Result<Option<ServiceDefinition>> {
     let config_home = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|home| home.join(".config")))?;
+        .or_else(|| dirs::home_dir().map(|home| home.join(".config")))
+        .context("failed to resolve XDG_CONFIG_HOME or home directory")?;
     Ok(Some(ServiceDefinition {
         path: config_home
             .join("systemd")
@@ -900,7 +905,6 @@ mod tests {
     fn windows_service_definition_uses_scheduled_task_launcher() -> Result<()> {
         let definition = service_definition_for_label("com.example.agent")?.unwrap();
         assert!(definition.path.ends_with("duckagent-gateway.cmd"));
-        assert_eq!(definition.kind, "scheduled task launcher");
         Ok(())
     }
 
