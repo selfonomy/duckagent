@@ -1,0 +1,605 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: docs/pnpm-lock.yaml
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install docs dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build docs
+        run: pnpm run build
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/dist
+
+  deploy-docs:
+    name: Deploy Docs
+    needs: docs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  repository-metadata:
+    name: Repository Metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify published repository files
+        run: |
+          test -f README.md
+          test -f LICENSE.txt
+          test -f docs/package.json
+          test -f docs/pnpm-lock.yaml
+          test -f scripts/install.sh
+          test -f scripts/install.ps1
+          grep -q "selfonomy/duckagent" README.md
+          grep -q "Apache License" LICENSE.txt
+
+  target-check:
+    name: Check (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-15
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+          - target: aarch64-pc-windows-msvc
+            runner: windows-2025
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2025
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux sandbox build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap libcap-dev musl-tools pkg-config
+
+      - name: Enable Linux user namespaces for sandbox smoke
+        if: runner.os == 'Linux'
+        run: |
+          # Required for bubblewrap to work on hosted Ubuntu runners.
+          sudo sysctl -w kernel.unprivileged_userns_clone=1
+          if sudo sysctl -a 2>/dev/null | grep -q '^kernel.apparmor_restrict_unprivileged_userns'; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Check musl target
+        if: contains(matrix.target, 'unknown-linux-musl')
+        env:
+          DUCKAGENT_SKIP_VENDORED_BWRAP: "1"
+        run: cargo check --locked --target ${{ matrix.target }} --all-targets
+
+      - name: Check
+        if: ${{ !contains(matrix.target, 'unknown-linux-musl') }}
+        env:
+          PKG_CONFIG_ALLOW_CROSS: "1"
+        run: cargo check --locked --target ${{ matrix.target }} --all-targets
+
+  native-test:
+    name: Test (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+          - runner: ubuntu-24.04-arm
+          - runner: macos-15
+          - runner: macos-15-intel
+          - runner: windows-2025
+          - runner: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux sandbox build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap libcap-dev musl-tools pkg-config
+
+      - name: Enable Linux user namespaces for sandbox smoke
+        if: runner.os == 'Linux'
+        run: |
+          # Required for bubblewrap to work on hosted Ubuntu runners.
+          sudo sysctl -w kernel.unprivileged_userns_clone=1
+          if sudo sysctl -a 2>/dev/null | grep -q '^kernel.apparmor_restrict_unprivileged_userns'; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build CLI binary for Windows runtime smokes
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          cargo build --locked
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          Write-Host "[ci timing] cargo build --locked: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -ne 0) {
+            exit $code
+          }
+
+      - name: Sandbox capability summary
+        if: runner.os != 'Windows'
+        run: cargo run --locked -- sandbox check workspace
+
+      - name: Windows sandbox capability summary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "target\debug\duck.exe"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          & $exe sandbox check workspace
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          Write-Host "[ci timing] sandbox check workspace: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -ne 0) {
+            exit $code
+          }
+
+      - name: Sandbox platform expectation
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet -- sandbox check workspace > sandbox-check.json
+          cat sandbox-check.json
+          python3 - <<'PY'
+          import json
+
+          with open("sandbox-check.json", "r", encoding="utf-8") as fh:
+              data = json.load(fh)
+          assert data["platform"]["supported"] is True, data
+          assert data["fail_closed"] is False, data
+          PY
+
+      - name: Windows sandbox platform expectation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "target\debug\duck.exe"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          & $exe sandbox check workspace > sandbox-check.json
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          Write-Host "[ci timing] windows platform expectation check: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -ne 0) {
+            exit $code
+          }
+          Get-Content sandbox-check.json
+          $json = Get-Content sandbox-check.json | ConvertFrom-Json
+          if ($json.platform.supported -ne $false) {
+            throw "workspace sandbox should require setup before reporting supported on Windows"
+          }
+          if ($json.fail_closed -ne $true) {
+            throw "workspace sandbox check should report fail_closed=true on Windows"
+          }
+          if ($json.platform.message -notmatch "requires elevated setup") {
+            throw "Windows sandbox message should mention required elevated setup"
+          }
+
+      - name: Linux sandbox runtime smoke
+        if: runner.os == 'Linux'
+        run: |
+          cargo build --locked
+          tmp="$(mktemp -d)"
+          mkdir -p "$tmp/home/.duckagent"
+          cat > "$tmp/home/.duckagent/config.json" <<'JSON'
+          {
+            "sandbox": {
+              "preset": "ci-filesystem",
+              "presets": {
+                "ci-filesystem": {
+                  "filesystem": {
+                    "mounts": [
+                      { "path": ".", "access": "ro" },
+                      { "path": "$TMPDIR", "access": "ro" }
+                    ],
+                    "rules": []
+                  },
+                  "network": {
+                    "mode": "allow",
+                    "hosts": { "*": "allow" },
+                    "addresses": {}
+                  },
+                  "env": { "*": "allow" },
+                  "permissions": {
+                    "tools": {},
+                    "shell": {}
+                  }
+                }
+              }
+            }
+          }
+          JSON
+          HOME="$tmp/home" target/debug/duck --sandbox ci-filesystem __sandbox-run --cwd "$PWD" -- /bin/sh -lc 'printf duckagent-linux-sandbox-smoke'
+
+      - name: macOS sandbox runtime smoke
+        if: runner.os == 'macOS'
+        run: |
+          cargo run --locked -- --sandbox readonly __sandbox-run --cwd "$PWD" -- /bin/sh -lc 'printf duckagent-macos-sandbox-smoke'
+
+      - name: Windows danger sandbox runtime smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "target\debug\duck.exe"
+          $env:DUCKAGENT_SANDBOX_TIMING = "1"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          & $exe --sandbox danger __sandbox-run --cwd "$PWD" -- pwsh -NoProfile -Command "Write-Output 'duckagent-windows-danger-smoke'"
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          Write-Host "[ci timing] windows danger sandbox runtime: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -ne 0) {
+            exit $code
+          }
+
+      - name: Windows sandbox fail-closed runtime smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "target\debug\duck.exe"
+          $env:DUCKAGENT_SANDBOX_TIMING = "1"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          $output = & $exe --sandbox readonly __sandbox-run --cwd "$PWD" -- pwsh -NoProfile -Command "Write-Output 'should-not-run'" 2>&1
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          $text = $output -join "`n"
+          Write-Host $text
+          Write-Host "[ci timing] windows fail-closed sandbox runtime: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -eq 0) {
+            throw "readonly sandbox unexpectedly ran on Windows instead of failing closed"
+          }
+          if ($text -notmatch "elevated setup") {
+            throw "Windows fail-closed error should mention elevated setup"
+          }
+          exit 0
+
+      - name: Windows elevated sandbox setup smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "target\debug\duck.exe"
+          $homePath = Join-Path $env:USERPROFILE ".duckagent"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          & $exe __sandbox-windows-setup-helper --duckagent-home "$homePath"
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          Write-Host "[ci timing] windows setup helper readonly: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -ne 0) {
+            exit $code
+          }
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          & $exe sandbox check readonly > sandbox-check-readonly.json
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          Write-Host "[ci timing] windows sandbox check readonly: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -ne 0) {
+            exit $code
+          }
+          Get-Content sandbox-check-readonly.json
+          $json = Get-Content sandbox-check-readonly.json | ConvertFrom-Json
+          if ($json.platform.supported -ne $true) {
+            throw "readonly sandbox should be supported after elevated Windows setup"
+          }
+
+      - name: Windows readonly sandbox runtime smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "target\debug\duck.exe"
+          $env:DUCKAGENT_SANDBOX_TIMING = "1"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          & $exe --sandbox readonly __sandbox-run --cwd "$PWD" -- pwsh -NoProfile -Command "Write-Output 'duckagent-windows-readonly-smoke'"
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          Write-Host "[ci timing] windows readonly sandbox runtime: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -ne 0) {
+            exit $code
+          }
+
+      - name: Windows sandbox process contract smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "target\debug\duck.exe"
+          $env:DUCKAGENT_SANDBOX_TIMING = "1"
+          $expectedCwd = (Resolve-Path ".").Path
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          $output = & $exe --sandbox readonly __sandbox-run --cwd "$PWD" `
+            --env DUCKAGENT_TEST_ENV=ok `
+            --env DUCKAGENT_EXPECTED_CWD="$expectedCwd" `
+            -- pwsh -NoProfile -Command "if (`$env:DUCKAGENT_TEST_ENV -ne 'ok') { exit 21 }; if ((Get-Location).Path -ne `$env:DUCKAGENT_EXPECTED_CWD) { exit 22 }; [Console]::Out.Write('stdout-ok'); [Console]::Error.Write('stderr-ok')" 2>&1
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          $text = $output -join "`n"
+          Write-Host $text
+          Write-Host "[ci timing] windows process contract stdout/stderr command: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -ne 0) {
+            throw "sandbox process contract command failed with code $code"
+          }
+          if ($text -notmatch "stdout-ok" -or $text -notmatch "stderr-ok") {
+            throw "sandbox process contract did not preserve stdout/stderr"
+          }
+
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          & $exe --sandbox readonly __sandbox-run --cwd "$PWD" -- pwsh -NoProfile -Command "exit 37"
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          Write-Host "[ci timing] windows process contract exit-code command: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -ne 37) {
+            throw "sandbox process contract did not preserve non-zero exit code"
+          }
+          exit 0
+
+      - name: Windows localhost proxy bypass smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "target\debug\duck.exe"
+          $env:DUCKAGENT_SANDBOX_TIMING = "1"
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse("127.0.0.1"), 0)
+          $listener.Start()
+          $serverPort = $listener.LocalEndpoint.Port
+          $listener.Stop()
+          $hitPath = Join-Path $env:RUNNER_TEMP "duckagent-localhost-hit.txt"
+          $job = Start-Job -ScriptBlock {
+            param($port, $hitPath)
+            $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse("127.0.0.1"), $port)
+            $listener.Start()
+            try {
+              $client = $listener.AcceptTcpClient()
+              try {
+                # Windows Firewall may accept and then reset a blocked loopback TCP connection.
+                # Count this as a sandbox escape only if the server actually receives request data.
+                $stream = $client.GetStream()
+                $stream.ReadTimeout = 5000
+                $buffer = New-Object byte[] 4096
+                $read = $stream.Read($buffer, 0, $buffer.Length)
+                if ($read -gt 0) {
+                  [System.Text.Encoding]::ASCII.GetString($buffer, 0, $read) | Out-File -FilePath $hitPath -Encoding utf8
+                }
+              } catch {
+              } finally {
+                $client.Close()
+              }
+            } finally {
+              $listener.Stop()
+            }
+          } -ArgumentList $serverPort, $hitPath
+          Start-Sleep -Seconds 1
+
+          $homePath = Join-Path $env:USERPROFILE ".duckagent"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          & $exe __sandbox-windows-setup-helper --duckagent-home "$homePath" --proxy
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          Write-Host "[ci timing] windows setup helper proxy: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          if ($code -ne 0) {
+            exit $code
+          }
+          $markerPath = Join-Path $homePath "sandbox\windows\setup_marker.json"
+          $marker = Get-Content $markerPath | ConvertFrom-Json
+          if ($marker.proxy_ports.Count -ne 1) {
+            throw "Windows proxy setup marker should contain exactly one managed proxy port"
+          }
+          $proxyPort = [int]$marker.proxy_ports[0]
+
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          $output = & $exe --sandbox workspace __sandbox-run --cwd "$PWD" `
+            --env DUCKAGENT_MANAGED_NETWORK_PROXY=1 `
+            --env HTTP_PROXY=http://127.0.0.1:$proxyPort `
+            --env HTTPS_PROXY=http://127.0.0.1:$proxyPort `
+            --env ALL_PROXY=http://127.0.0.1:$proxyPort `
+            --env NO_PROXY=localhost,127.0.0.1 `
+            --env no_proxy=localhost,127.0.0.1 `
+            -- curl.exe --noproxy '*' -fsS --max-time 3 "http://127.0.0.1:$serverPort/ci-localhost-bypass-smoke" 2>&1
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          $text = $output -join "`n"
+          Write-Host $text
+          Write-Host "[ci timing] windows localhost sandboxed curl: $($sw.Elapsed.TotalSeconds) seconds, exit=$code"
+          Stop-Job $job -ErrorAction SilentlyContinue
+          Remove-Job $job -ErrorAction SilentlyContinue
+          if ($code -eq 0) {
+            throw "expected sandboxed localhost request to fail instead of bypassing the managed proxy"
+          }
+          if (Test-Path $hitPath) {
+            Get-Content $hitPath
+            throw "localhost server was reached despite proxy-mode sandbox"
+          }
+          exit 0
+
+      - name: Sandbox localhost proxy bypass smoke
+        if: runner.os == 'Linux' || runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          server_log="$tmp/server.log"
+          python3 -u - "$tmp" >"$server_log" 2>&1 <<'PY' &
+          import http.server
+          import os
+          import sys
+
+          root = sys.argv[1]
+          port_path = os.path.join(root, "server-port")
+          hit_path = os.path.join(root, "server-hit")
+
+          class Handler(http.server.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  with open(hit_path, "a", encoding="utf-8") as fh:
+                      fh.write(self.path + "\n")
+                  body = b"duckagent-localhost-bypass-hit"
+                  self.send_response(200)
+                  self.send_header("Content-Length", str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+
+              def log_message(self, _format, *args):
+                  pass
+
+          server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+          with open(port_path, "w", encoding="utf-8") as fh:
+              fh.write(str(server.server_address[1]))
+          server.serve_forever()
+          PY
+          server_pid="$!"
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+            rm -rf "$tmp"
+          }
+          trap cleanup EXIT
+
+          for _ in $(seq 1 300); do
+            if [ -s "$tmp/server-port" ]; then
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              echo "localhost test server exited before writing a port"
+              cat "$server_log"
+              exit 1
+            fi
+            sleep 0.05
+          done
+          if [ ! -s "$tmp/server-port" ]; then
+            echo "localhost test server did not write a port"
+            cat "$server_log"
+            exit 1
+          fi
+          port="$(cat "$tmp/server-port")"
+          echo "localhost test server listening on 127.0.0.1:${port}"
+          touch "$tmp/curl.out"
+
+          positive_out="$tmp/positive-control.out"
+          if ! curl -fsS --max-time 5 "http://127.0.0.1:${port}/ci-localhost-positive-control" > "$positive_out" 2>&1; then
+            echo "localhost positive-control request failed before sandbox test"
+            cat "$positive_out"
+            exit 1
+          fi
+          if ! grep -q "duckagent-localhost-bypass-hit" "$positive_out"; then
+            echo "localhost positive-control response did not match expected body"
+            cat "$positive_out"
+            exit 1
+          fi
+          echo "localhost positive-control request succeeded"
+          rm -f "$tmp/server-hit"
+
+          set +e
+          DUCKAGENT_MANAGED_NETWORK_PROXY=1 \
+          HTTP_PROXY=http://127.0.0.1:43129 \
+          HTTPS_PROXY=http://127.0.0.1:43129 \
+          ALL_PROXY=http://127.0.0.1:43129 \
+          NO_PROXY=localhost,127.0.0.1 \
+          no_proxy=localhost,127.0.0.1 \
+            cargo run --locked --quiet -- --sandbox workspace __sandbox-run --cwd "$PWD" -- \
+              curl --noproxy '*' -fsS --max-time 3 "http://127.0.0.1:${port}/ci-localhost-bypass-smoke" \
+              > "$tmp/curl.out" 2>&1
+          status="$?"
+          set -e
+
+          cat "$tmp/curl.out"
+          echo "sandboxed curl status: $status"
+          if [ "$status" -eq 0 ]; then
+            echo "expected sandboxed localhost request to fail instead of bypassing the managed proxy"
+            exit 1
+          fi
+          if [ -s "$tmp/server-hit" ]; then
+            echo "localhost server was reached despite proxy-mode sandbox"
+            cat "$tmp/server-hit"
+            exit 1
+          fi
+          echo "sandboxed localhost request was blocked before reaching the test server"
+          cleanup
+          trap - EXIT
+          exit 0

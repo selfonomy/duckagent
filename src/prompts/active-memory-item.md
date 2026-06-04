@@ -1,0 +1,1 @@
+- title="{{title}}"; kind={{kind}}; summary="{{summary}}"

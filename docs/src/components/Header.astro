@@ -1,0 +1,172 @@
+---
+import config from 'virtual:starlight/user-config';
+
+import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
+import Search from '@astrojs/starlight/components/Search.astro';
+import SiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
+import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
+import ThemeSelect from '@astrojs/starlight/components/ThemeSelect.astro';
+
+const shouldRenderSearch =
+  config.pagefind || config.components.Search !== '@astrojs/starlight/components/Search.astro';
+
+const baseUrl = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const docsPath = (path: string) => `${baseUrl}${path.replace(/^\//, '')}`;
+const pathname = Astro.url.pathname.startsWith(baseUrl)
+  ? `/${Astro.url.pathname.slice(baseUrl.length)}`
+  : Astro.url.pathname;
+const navItems = [
+  { label: 'Start', href: docsPath('/start/'), match: '/start/' },
+  { label: 'Avatar & Identity', href: docsPath('/avatar/'), match: '/avatar/' },
+  { label: 'Capabilities', href: docsPath('/capabilities/'), match: '/capabilities/' },
+  { label: 'Gateway', href: docsPath('/gateway/'), match: '/gateway/' },
+  { label: 'Sandbox', href: docsPath('/sandbox/'), match: '/sandbox/' },
+  { label: 'Benchmark', href: docsPath('/benchmark/'), match: '/benchmark/' },
+  { label: 'Reference', href: docsPath('/reference/'), match: '/reference/' },
+];
+
+const isActive = (item: (typeof navItems)[number]) =>
+  pathname.startsWith(item.match);
+---
+
+<div class="duckagent-header">
+  <div class="header-main">
+    <div class="title-wrapper sl-flex">
+      <SiteTitle />
+    </div>
+    <div class="sl-flex print:hidden search-wrapper">
+      {shouldRenderSearch && <Search />}
+    </div>
+    <div class="sl-hidden md:sl-flex print:hidden right-group">
+      <div class="sl-flex social-icons">
+        <SocialIcons />
+      </div>
+      <ThemeSelect />
+      <LanguageSelect />
+    </div>
+  </div>
+  <nav class="product-nav print:hidden" aria-label="Product sections">
+    {
+      navItems.map((item) => (
+        <a href={item.href} aria-current={isActive(item) ? 'page' : undefined}>
+          {item.label}
+        </a>
+      ))
+    }
+  </nav>
+</div>
+
+<style>
+  @layer starlight.core {
+    .duckagent-header {
+      align-content: center;
+      box-sizing: border-box;
+      display: grid;
+      gap: 0.55rem;
+      grid-template-rows: auto auto;
+      min-height: 100%;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .header-main {
+      display: flex;
+      gap: var(--sl-nav-gap);
+      justify-content: space-between;
+      align-items: center;
+      min-height: 2.35rem;
+    }
+
+    .duckagent-header :global(.site-title) {
+      gap: 0.65rem;
+      min-width: 0;
+    }
+
+    .duckagent-header :global(.site-title img) {
+      border-radius: 8px;
+      height: 2.25rem;
+      width: 2.25rem;
+    }
+
+    .duckagent-header :global(.site-title span) {
+      line-height: 1.1;
+    }
+
+    .title-wrapper {
+      overflow: clip;
+      padding: 0.25rem;
+      margin: -0.25rem;
+      min-width: 0;
+    }
+
+    .search-wrapper {
+      flex: 1;
+      justify-content: center;
+      min-width: 0;
+    }
+
+    .right-group,
+    .social-icons {
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .social-icons::after {
+      content: '';
+      height: 2rem;
+      border-inline-end: 1px solid var(--sl-color-gray-5);
+    }
+
+    .product-nav {
+      display: flex;
+      align-items: center;
+      border-top: 1px solid var(--sl-color-gray-6);
+      box-sizing: border-box;
+      flex-wrap: nowrap;
+      gap: 0.25rem;
+      min-height: 2rem;
+      min-width: 0;
+      overflow-x: auto;
+      padding-top: 0.45rem;
+      scrollbar-width: none;
+      white-space: nowrap;
+      width: 100%;
+      padding-bottom: 0.15rem;
+    }
+
+    .product-nav::-webkit-scrollbar {
+      display: none;
+    }
+
+    .product-nav a {
+      border-radius: 999px;
+      color: var(--sl-color-gray-2);
+      font-size: var(--sl-text-sm);
+      flex: 0 0 auto;
+      line-height: 1;
+      padding: 0.45rem 0.7rem;
+      text-decoration: none;
+    }
+
+    .product-nav a:hover,
+    .product-nav a:focus {
+      color: var(--sl-color-white);
+      background: var(--sl-color-gray-6);
+    }
+
+    .product-nav a[aria-current='page'] {
+      color: var(--sl-color-black);
+      background: var(--sl-color-accent-high);
+      font-weight: 700;
+    }
+
+    @media (min-width: 50rem) {
+      .header-main {
+        display: grid;
+        grid-template-columns: minmax(12rem, auto) 1fr auto;
+      }
+    }
+  }
+</style>

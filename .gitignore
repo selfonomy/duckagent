@@ -1,0 +1,8 @@
+target
+.env
+node_modules
+.DS_Store
+dist
+__pycache__
+results
+.astro

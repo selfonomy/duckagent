@@ -1,0 +1,1 @@
+- `{{name}}`: MCP server `{{server_name}}` tool `{{tool_name}}`. {{description}} If the Agent needs the full schema, instruct it to call `load_mcp` with args={"name":"{{name}}"} first.

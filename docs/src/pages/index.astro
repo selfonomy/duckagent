@@ -1,0 +1,712 @@
+---
+import avatarPortrait from '../assets/avatar-home.png';
+import GitHubFooter from '../components/GitHubFooter.astro';
+
+const baseUrl = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const docsPath = (path: string) => `${baseUrl}${path.replace(/^\//, '')}`;
+
+const navLinks = [
+  { label: 'Start', href: docsPath('/start/') },
+  { label: 'Avatar & Identity', href: docsPath('/avatar/') },
+  { label: 'Capabilities', href: docsPath('/capabilities/') },
+  { label: 'Gateway', href: docsPath('/gateway/') },
+  { label: 'Sandbox', href: docsPath('/sandbox/') },
+  { label: 'Benchmark', href: docsPath('/benchmark/') },
+  { label: 'Reference', href: docsPath('/reference/') },
+];
+
+const featureBands = [
+  {
+    label: 'Avatar',
+    href: docsPath('/avatar/'),
+    stat: 'SOUL.md / USER.md / cards',
+    text: 'Portable identity, profile files, and SillyTavern card import.',
+  },
+  {
+    label: 'Capabilities',
+    href: docsPath('/capabilities/'),
+    stat: 'One runtime surface',
+    text: 'Built-in tools, cron, MCP, web, shell, memory, skills, and process control.',
+  },
+  {
+    label: 'Rewind',
+    href: docsPath('/reference/session-rewind/'),
+    stat: 'Slash file restore',
+    text: 'Resume or rewind sessions and safely restore tracked file edits.',
+  },
+  {
+    label: 'Benchmark',
+    href: docsPath('/benchmark/'),
+    stat: 'Guarded recoverable context',
+    text: '1188/1188 simulated turns and about 108M raw tool tokens saved.',
+  },
+  {
+    label: 'Gateway',
+    href: docsPath('/gateway/'),
+    stat: 'Service + channels',
+    text: 'OpenAI-compatible API, chat integrations, webhooks, and approvals.',
+  },
+  {
+    label: 'Sandbox',
+    href: docsPath('/sandbox/'),
+    stat: 'Policy by preset',
+    text: 'Filesystem, network, environment, secrets, and shell boundaries.',
+  },
+];
+
+---
+
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="DuckAgent documentation for the Rust-native AI agent runtime."
+    />
+    <title>DuckAgent</title>
+    <link rel="icon" type="image/png" href={docsPath('/favicon.png')} />
+  </head>
+  <body>
+    <main>
+      <section class="hero" aria-label="DuckAgent">
+        <canvas id="signal-scene" aria-hidden="true"></canvas>
+        <div class="mesh" aria-hidden="true"></div>
+
+        <header class="topbar">
+          <a class="brand" href={docsPath('/')}>
+            <img src={docsPath('/favicon.png')} alt="" width="32" height="32" />
+            <span>DuckAgent</span>
+          </a>
+          <nav class="navlinks" aria-label="Primary">
+            {navLinks.map((item) => <a href={item.href}>{item.label}</a>)}
+          </nav>
+        </header>
+
+        <div class="hero-shell">
+          <div class="hero-copy">
+            <p class="eyebrow">Rust-native AI Agent Runtime</p>
+            <h1>DuckAgent</h1>
+            <p class="lede">
+              A local-first agent with a precise TUI, gateway channels, portable avatar identity,
+              capability boundaries, benchmarked context projection, and a sandbox users can
+              actually understand.
+            </p>
+            <div class="actions">
+              <a class="primary" href={docsPath('/start/')}>Start reading <span aria-hidden="true">-></span></a>
+              <a class="secondary" href={docsPath('/benchmark/')}>Benchmark results</a>
+            </div>
+            <div class="micro-panel" aria-label="Runtime summary">
+              <span>MAIN AGENT</span>
+              <span>APPEND-ONLY PROMPT</span>
+              <span>BENCHMARKED CONTEXT</span>
+              <span>ONE SYSTEM PROMPT</span>
+            </div>
+          </div>
+
+          <div class="avatar-stage" aria-label="DuckAgent avatar preview">
+            <div class="avatar-frame">
+              <img
+                src={avatarPortrait.src}
+                width={avatarPortrait.width}
+                height={avatarPortrait.height}
+                alt="DuckAgent avatar portrait"
+                decoding="async"
+                loading="eager"
+              />
+              <div class="scanline" aria-hidden="true"></div>
+              <div class="portrait-label" aria-hidden="true">
+                <span>AVATAR</span>
+                <strong>identity online</strong>
+              </div>
+            </div>
+            <div class="telemetry" aria-label="Feature telemetry">
+              <span><strong>Benchmark</strong> 1188/1188 turns</span>
+              <span><strong>Gateway</strong> channels</span>
+              <span><strong>Sandbox</strong> presets</span>
+              <span><strong>Cards</strong> import</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="status-strip" aria-label="Highlights">
+          {featureBands.map((item) => (
+            <a href={item.href} class="signal">
+              <span>{item.label}</span>
+              <strong>{item.stat}</strong>
+              <small>{item.text}</small>
+            </a>
+          ))}
+        </div>
+      </section>
+    </main>
+    <GitHubFooter />
+
+    <script>
+      type SignalNode = {
+        x: number;
+        y: number;
+        vx: number;
+        vy: number;
+        size: number;
+        hue: number;
+      };
+
+      const canvasElement = document.getElementById('signal-scene') as HTMLCanvasElement | null;
+      if (!canvasElement) {
+        throw new Error('Signal canvas is missing.');
+      }
+
+      const context = canvasElement.getContext('2d');
+      if (!context) {
+        throw new Error('Canvas 2D context is unavailable.');
+      }
+
+      const canvas: HTMLCanvasElement = canvasElement;
+      const ctx: CanvasRenderingContext2D = context;
+      const pointer = { x: 0, y: 0, active: false };
+      let nodes: SignalNode[] = [];
+      let width = 0;
+      let height = 0;
+      let ratio = 1;
+
+      function resize() {
+        ratio = Math.min(window.devicePixelRatio || 1, 2);
+        width = canvas.clientWidth;
+        height = canvas.clientHeight;
+        canvas.width = Math.floor(width * ratio);
+        canvas.height = Math.floor(height * ratio);
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        const count = Math.max(36, Math.floor((width * height) / 22000));
+        nodes = Array.from({ length: count }, (_, index) => ({
+          x: (index * 89) % width,
+          y: (index * 47) % height,
+          vx: ((index % 7) - 3) * 0.09,
+          vy: (((index + 5) % 9) - 4) * 0.065,
+          size: 1 + (index % 4) * 0.28,
+          hue: index % 3 === 0 ? 48 : index % 3 === 1 ? 180 : 320,
+        }));
+      }
+
+      function draw() {
+        ctx.fillStyle = '#05060a';
+        ctx.fillRect(0, 0, width, height);
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.08)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < width; x += 72) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+          ctx.stroke();
+        }
+        for (let y = 0; y < height; y += 72) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        }
+
+        for (const node of nodes) {
+          node.x += node.vx;
+          node.y += node.vy;
+          if (node.x < -20) node.x = width + 20;
+          if (node.x > width + 20) node.x = -20;
+          if (node.y < -20) node.y = height + 20;
+          if (node.y > height + 20) node.y = -20;
+        }
+
+        for (let i = 0; i < nodes.length; i++) {
+          for (let j = i + 1; j < nodes.length; j++) {
+            const a = nodes[i];
+            const b = nodes[j];
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < 126) {
+              const alpha = (1 - dist / 126) * 0.18;
+              ctx.strokeStyle = `hsla(${a.hue}, 92%, 62%, ${alpha})`;
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+            }
+          }
+        }
+
+        for (const node of nodes) {
+          const pull = pointer.active ? Math.max(0, 1 - Math.hypot(pointer.x - node.x, pointer.y - node.y) / 210) : 0;
+          ctx.fillStyle = `hsla(${node.hue}, 94%, 66%, ${0.48 + pull * 0.36})`;
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, node.size + pull * 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        requestAnimationFrame(draw);
+      }
+
+      canvas.addEventListener('pointermove', (event) => {
+        const rect = canvas.getBoundingClientRect();
+        pointer.x = event.clientX - rect.left;
+        pointer.y = event.clientY - rect.top;
+        pointer.active = true;
+      });
+      canvas.addEventListener('pointerleave', () => {
+        pointer.active = false;
+      });
+      window.addEventListener('resize', resize, { passive: true });
+      resize();
+      draw();
+    </script>
+  </body>
+</html>
+
+<style>
+  :root {
+    color-scheme: dark;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #05060a;
+    color: #f7efe0;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    background: #05060a;
+  }
+
+  body {
+    margin: 0;
+    background: #05060a;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .hero {
+    position: relative;
+    min-height: 86svh;
+    overflow: hidden;
+    padding: 18px clamp(20px, 5vw, 72px) 0;
+    isolation: isolate;
+  }
+
+  #signal-scene,
+  .mesh {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  #signal-scene {
+    z-index: -3;
+  }
+
+  .mesh {
+    z-index: -2;
+    background:
+      linear-gradient(115deg, rgba(5, 6, 10, 0.24), rgba(5, 6, 10, 0.78) 54%, rgba(5, 6, 10, 0.36)),
+      linear-gradient(90deg, rgba(34, 211, 238, 0.06) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(251, 191, 36, 0.06) 1px, transparent 1px);
+    background-size: auto, 88px 88px, 88px 88px;
+    mask-image: linear-gradient(to bottom, black 76%, transparent);
+  }
+
+  .hero::after {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    content: "";
+    background:
+      linear-gradient(90deg, transparent, rgba(236, 72, 153, 0.12), transparent) 0 18% / 100% 1px no-repeat,
+      linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.14), transparent) 0 68% / 100% 1px no-repeat,
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 7px);
+    opacity: 0.72;
+  }
+
+  .topbar,
+  .hero-shell,
+  .status-strip {
+    position: relative;
+    z-index: 1;
+  }
+
+  .topbar {
+    display: grid;
+    gap: 12px;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+    width: max-content;
+    color: #fff8e8;
+    font-size: 0.9rem;
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+
+  .brand img {
+    border-radius: 8px;
+    box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.24);
+  }
+
+  .navlinks {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 0 0 8px;
+    color: rgba(247, 239, 224, 0.74);
+    font-size: 0.78rem;
+    font-weight: 720;
+    scrollbar-width: none;
+    text-transform: uppercase;
+  }
+
+  .navlinks::-webkit-scrollbar {
+    display: none;
+  }
+
+  .navlinks a {
+    flex: 0 0 auto;
+    padding: 7px 0;
+    border-bottom: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  .navlinks a:hover {
+    border-color: rgba(34, 211, 238, 0.72);
+    color: #fef3c7;
+  }
+
+  .hero-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 0.88fr) minmax(320px, 0.72fr);
+    align-items: center;
+    gap: clamp(34px, 6vw, 90px);
+    max-width: 1240px;
+    margin: 54px auto 0;
+  }
+
+  .hero-copy {
+    max-width: 640px;
+  }
+
+  .eyebrow {
+    margin: 0 0 13px;
+    color: #67e8f9;
+    font-size: 0.75rem;
+    font-weight: 850;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin: 0;
+    color: #fff8e8;
+    font-size: 4.35rem;
+    line-height: 0.96;
+    letter-spacing: 0;
+    text-shadow: 0 0 30px rgba(251, 191, 36, 0.18);
+  }
+
+  .lede {
+    max-width: 560px;
+    margin: 21px 0 0;
+    color: rgba(247, 239, 224, 0.78);
+    font-size: 1rem;
+    line-height: 1.72;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 28px;
+  }
+
+  .actions a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 15px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 820;
+  }
+
+  .primary {
+    background: #f8d77a;
+    color: #120d04;
+    box-shadow: 0 0 26px rgba(248, 215, 122, 0.2);
+  }
+
+  .secondary {
+    border: 1px solid rgba(103, 232, 249, 0.32);
+    color: #cffafe;
+  }
+
+  .micro-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 24px;
+    color: rgba(247, 239, 224, 0.58);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.68rem;
+  }
+
+  .micro-panel span {
+    padding: 7px 9px;
+    border: 1px solid rgba(247, 239, 224, 0.14);
+    border-radius: 8px;
+    background: rgba(5, 6, 10, 0.48);
+  }
+
+  .avatar-stage {
+    display: grid;
+    gap: 13px;
+    justify-self: end;
+    width: min(100%, 470px);
+  }
+
+  .avatar-frame {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 1;
+    border: 1px solid rgba(248, 215, 122, 0.42);
+    border-radius: 8px;
+    background: #05060a;
+    box-shadow:
+      0 0 0 1px rgba(34, 211, 238, 0.1),
+      0 28px 80px rgba(0, 0, 0, 0.52),
+      0 0 54px rgba(34, 211, 238, 0.12);
+  }
+
+  .avatar-frame::before,
+  .avatar-frame::after {
+    position: absolute;
+    z-index: 2;
+    content: "";
+    pointer-events: none;
+  }
+
+  .avatar-frame::before {
+    inset: 14px;
+    border: 1px solid rgba(34, 211, 238, 0.28);
+    border-radius: 6px;
+  }
+
+  .avatar-frame::after {
+    inset: auto 16px 16px auto;
+    width: 118px;
+    height: 28px;
+    border-right: 1px solid rgba(236, 72, 153, 0.62);
+    border-bottom: 1px solid rgba(236, 72, 153, 0.62);
+  }
+
+  .avatar-frame img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scale(1.015);
+  }
+
+  .scanline {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, transparent, rgba(34, 211, 238, 0.18), transparent) 0 0 / 100% 34% no-repeat,
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 5px);
+    mix-blend-mode: screen;
+    animation: scan 5.8s linear infinite;
+  }
+
+  .portrait-label {
+    position: absolute;
+    left: 18px;
+    bottom: 18px;
+    z-index: 3;
+    display: grid;
+    gap: 3px;
+    padding: 9px 11px;
+    border: 1px solid rgba(248, 215, 122, 0.34);
+    border-radius: 8px;
+    background: rgba(5, 6, 10, 0.72);
+    backdrop-filter: blur(14px);
+  }
+
+  .portrait-label span,
+  .portrait-label strong {
+    letter-spacing: 0;
+  }
+
+  .portrait-label span {
+    color: #fbbf24;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.62rem;
+    font-weight: 850;
+  }
+
+  .portrait-label strong {
+    color: #fff8e8;
+    font-size: 0.78rem;
+  }
+
+  .telemetry {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 8px;
+  }
+
+  .telemetry span {
+    min-height: 58px;
+    padding: 10px;
+    border: 1px solid rgba(247, 239, 224, 0.12);
+    border-radius: 8px;
+    background: rgba(5, 6, 10, 0.52);
+    color: rgba(247, 239, 224, 0.62);
+    font-size: 0.72rem;
+    line-height: 1.35;
+  }
+
+  .telemetry strong {
+    display: block;
+    color: #fef3c7;
+    font-size: 0.8rem;
+  }
+
+  .status-strip {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1px;
+    max-width: 1240px;
+    margin: 46px auto 0;
+    background: rgba(247, 239, 224, 0.14);
+    border: 1px solid rgba(247, 239, 224, 0.14);
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
+  }
+
+  .signal {
+    min-height: 108px;
+    padding: 17px;
+    background: rgba(5, 6, 10, 0.78);
+  }
+
+  .signal span,
+  .signal strong,
+  .signal small {
+    display: block;
+  }
+
+  .signal span {
+    color: #67e8f9;
+    font-size: 0.7rem;
+    font-weight: 850;
+    text-transform: uppercase;
+  }
+
+  .signal strong {
+    margin-top: 11px;
+    color: #fff8e8;
+    font-size: 0.9rem;
+    line-height: 1.35;
+  }
+
+  .signal small {
+    margin-top: 9px;
+    color: rgba(247, 239, 224, 0.58);
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+
+  @keyframes scan {
+    0% {
+      background-position: 0 -45%, 0 0;
+    }
+    100% {
+      background-position: 0 145%, 0 0;
+    }
+  }
+
+  @media (max-width: 1120px) {
+    .hero-shell {
+      grid-template-columns: 1fr;
+      margin-top: 42px;
+    }
+
+    h1 {
+      font-size: 3.45rem;
+    }
+
+    .avatar-stage {
+      justify-self: start;
+      width: min(100%, 420px);
+    }
+
+  }
+
+  @media (max-width: 720px) {
+    .hero {
+      min-height: auto;
+      padding: 16px 16px 0;
+    }
+
+    .navlinks {
+      gap: 13px;
+      font-size: 0.7rem;
+    }
+
+    .hero-shell {
+      gap: 28px;
+      margin-top: 34px;
+    }
+
+    h1 {
+      font-size: 2.55rem;
+    }
+
+    .lede {
+      font-size: 0.94rem;
+    }
+
+    .avatar-stage {
+      width: 100%;
+    }
+
+    .telemetry,
+    .status-strip {
+      grid-template-columns: 1fr;
+    }
+
+    .status-strip {
+      margin-top: 34px;
+    }
+
+    .signal {
+      min-height: auto;
+    }
+
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scanline {
+      animation: none;
+    }
+  }
+</style>

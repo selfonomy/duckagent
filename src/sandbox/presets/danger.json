@@ -1,0 +1,32 @@
+{
+  "sandbox": {
+    "preset": "danger",
+    "presets": {
+      "danger": {
+        "filesystem": {
+          "mounts": [
+            {
+              "path": "*",
+              "access": "rw"
+            }
+          ],
+          "rules": []
+        },
+        "network": {
+          "mode": "allow",
+          "hosts": {
+            "*": "allow"
+          },
+          "addresses": {}
+        },
+        "env": {
+          "*": "allow"
+        },
+        "permissions": {
+          "tools": {},
+          "shell": {}
+        }
+      }
+    }
+  }
+}

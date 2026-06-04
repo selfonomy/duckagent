@@ -1,0 +1,99 @@
+{
+  "sandbox": {
+    "preset": "readonly",
+    "presets": {
+      "readonly": {
+        "filesystem": {
+          "mounts": [
+            {
+              "path": "*",
+              "access": "ro"
+            },
+            {
+              "path": ".",
+              "access": "ro"
+            },
+            {
+              "path": "$TMPDIR",
+              "access": "ro"
+            }
+          ],
+          "rules": [
+            {
+              "path": ".env",
+              "access": "none"
+            },
+            {
+              "path": ".env.*",
+              "access": "none"
+            },
+            {
+              "path": ".git",
+              "access": "ro"
+            },
+            {
+              "path": "*.pem",
+              "access": "none"
+            },
+            {
+              "path": "*.key",
+              "access": "none"
+            },
+            {
+              "path": "id_rsa",
+              "access": "none"
+            },
+            {
+              "path": "id_ed25519",
+              "access": "none"
+            },
+            {
+              "path": "*.p12",
+              "access": "none"
+            },
+            {
+              "path": "*.pfx",
+              "access": "none"
+            }
+          ]
+        },
+        "network": {
+          "mode": "deny",
+          "hosts": {
+            "*": "deny"
+          },
+          "addresses": {
+            "*": "deny"
+          }
+        },
+        "env": {
+          "*": "allow"
+        },
+        "permissions": {
+          "tools": {},
+          "shell": {
+            "bash -c": "ask",
+            "bash -lc": "ask",
+            "chmod": "ask",
+            "chown": "ask",
+            "dd": "ask",
+            "find -delete": "ask",
+            "git push": "ask",
+            "git reset --hard": "ask",
+            "mkfs": "ask",
+            "node -e": "ask",
+            "python -c": "ask",
+            "python3 -c": "ask",
+            "rm -fr": "deny",
+            "rm -r": "ask",
+            "rm -rf": "deny",
+            "sh -c": "ask",
+            "sudo": "ask",
+            "zsh -c": "ask",
+            "zsh -lc": "ask"
+          }
+        }
+      }
+    }
+  }
+}

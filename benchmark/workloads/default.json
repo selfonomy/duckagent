@@ -1,0 +1,565 @@
+{
+  "workloads": [
+    {
+      "name": "plain_chat",
+      "description": "User asks conceptual follow-ups without tools. This checks whether compaction overhead hurts ordinary chat.",
+      "loops": [
+        {
+          "name": "memory_design_question",
+          "user_tokens": 180,
+          "assistant_final_tokens": 720,
+          "tool_calls": [],
+          "dependency_probabilities": {
+            "none": 0.65,
+            "global_conclusion": 0.35
+          }
+        },
+        {
+          "name": "strategy_followup",
+          "user_tokens": 150,
+          "assistant_final_tokens": 640,
+          "tool_calls": [],
+          "dependency_probabilities": {
+            "none": 0.55,
+            "global_conclusion": 0.45
+          }
+        }
+      ]
+    },
+    {
+      "name": "code_compare_two_files",
+      "description": "User inspects a function in one file, then asks to compare or reuse another implementation. Exact code evidence matters.",
+      "loops": [
+        {
+          "name": "inspect_1js_function",
+          "user_tokens": 90,
+          "assistant_final_tokens": 360,
+          "tool_calls": [
+            {
+              "name": "read 1.js",
+              "capability": "read_file",
+              "purpose_tokens": 36,
+              "args_tokens": 42,
+              "outputs": {
+                "raw": 9200,
+                "exact_excerpt": 1850,
+                "summary": 260,
+                "handle": 80
+              },
+              "preserve": "working_evidence",
+              "recovery_tokens": {
+                "exact_evidence": 1900,
+                "local_detail": 1200
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.25,
+            "global_conclusion": 0.2,
+            "exact_evidence": 0.4,
+            "raw_content": 0.08,
+            "local_detail": 0.15
+          }
+        },
+        {
+          "name": "inspect_2js_and_choose",
+          "user_tokens": 110,
+          "assistant_final_tokens": 520,
+          "tool_calls": [
+            {
+              "name": "read 2.js",
+              "capability": "read_file",
+              "purpose_tokens": 40,
+              "args_tokens": 42,
+              "outputs": {
+                "raw": 7600,
+                "exact_excerpt": 2100,
+                "summary": 320,
+                "handle": 80
+              },
+              "preserve": "working_evidence",
+              "recovery_tokens": {
+                "exact_evidence": 2100,
+                "local_detail": 900
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.35,
+            "global_conclusion": 0.25,
+            "exact_evidence": 0.3,
+            "local_detail": 0.1
+          },
+          "raw_dependency_events": [
+            {
+              "label": "User asks to compare against the function inspected in 1.js.",
+              "source_loop_offset": 1,
+              "dependency": "exact_evidence",
+              "probability": 0.7
+            },
+            {
+              "label": "User may need to reopen the full 1.js raw content instead of only the excerpt.",
+              "source_loop_offset": 1,
+              "dependency": "raw_content",
+              "probability": 0.25
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fix_test_loop",
+      "description": "Common coding loop: inspect files, edit, run tests, then answer. Test output detail is usually recoverable; edited code evidence matters.",
+      "loops": [
+        {
+          "name": "inspect_and_patch",
+          "user_tokens": 160,
+          "assistant_final_tokens": 580,
+          "tool_calls": [
+            {
+              "name": "read agent.rs",
+              "capability": "read_file",
+              "purpose_tokens": 42,
+              "args_tokens": 50,
+              "outputs": {
+                "raw": 11800,
+                "exact_excerpt": 2600,
+                "summary": 360,
+                "handle": 90
+              },
+              "preserve": "working_evidence",
+              "recovery_tokens": {
+                "exact_evidence": 2600,
+                "local_detail": 1600
+              }
+            },
+            {
+              "name": "write patch",
+              "capability": "write_file",
+              "purpose_tokens": 50,
+              "args_tokens": 1800,
+              "outputs": {
+                "raw": 120,
+                "exact_excerpt": 120,
+                "summary": 80,
+                "handle": 40
+              },
+              "preserve": "reference",
+              "recovery_tokens": {
+                "local_detail": 200
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.3,
+            "global_conclusion": 0.25,
+            "exact_evidence": 0.25,
+            "raw_content": 0.06,
+            "local_detail": 0.2
+          }
+        },
+        {
+          "name": "run_tests",
+          "user_tokens": 70,
+          "assistant_final_tokens": 420,
+          "tool_calls": [
+            {
+              "name": "cargo test",
+              "capability": "process_start",
+              "purpose_tokens": 34,
+              "args_tokens": 48,
+              "outputs": {
+                "raw": 18500,
+                "exact_excerpt": 1600,
+                "summary": 420,
+                "handle": 120
+              },
+              "preserve": "reference",
+              "recovery_tokens": {
+                "local_detail": 2200,
+                "continuation_handle": 140
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.25,
+            "global_conclusion": 0.5,
+            "local_detail": 0.2,
+            "continuation_handle": 0.05
+          },
+          "raw_dependency_events": [
+            {
+              "label": "User follows up on the exact patch context after seeing tests.",
+              "source_loop_offset": 1,
+              "dependency": "exact_evidence",
+              "probability": 0.35
+            },
+            {
+              "label": "User may need the full agent.rs body again after seeing tests.",
+              "source_loop_offset": 1,
+              "dependency": "raw_content",
+              "probability": 0.12
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "long_log_debug",
+      "description": "Debugging a noisy process log. The user may ask for exact error detail, but search/query can recover it.",
+      "loops": [
+        {
+          "name": "start_dev_server",
+          "user_tokens": 120,
+          "assistant_final_tokens": 360,
+          "tool_calls": [
+            {
+              "name": "npm dev",
+              "capability": "process_start",
+              "purpose_tokens": 40,
+              "args_tokens": 70,
+              "outputs": {
+                "raw": 32000,
+                "exact_excerpt": 1800,
+                "summary": 520,
+                "handle": 160
+              },
+              "preserve": "reference",
+              "recovery_tokens": {
+                "local_detail": 2600,
+                "continuation_handle": 160
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.2,
+            "global_conclusion": 0.35,
+            "local_detail": 0.25,
+            "raw_content": 0.08,
+            "continuation_handle": 0.2
+          }
+        },
+        {
+          "name": "search_error",
+          "user_tokens": 100,
+          "assistant_final_tokens": 440,
+          "tool_calls": [
+            {
+              "name": "process_read search",
+              "capability": "process_read",
+              "purpose_tokens": 42,
+              "args_tokens": 64,
+              "outputs": {
+                "raw": 9000,
+                "exact_excerpt": 1800,
+                "summary": 400,
+                "handle": 140
+              },
+              "preserve": "working_evidence",
+              "recovery_tokens": {
+                "exact_evidence": 1800,
+                "local_detail": 1000,
+                "continuation_handle": 140
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.25,
+            "global_conclusion": 0.35,
+            "exact_evidence": 0.15,
+            "local_detail": 0.2,
+            "continuation_handle": 0.05
+          },
+          "raw_dependency_events": [
+            {
+              "label": "User asks about an earlier dev-server log line.",
+              "source_loop_offset": 1,
+              "dependency": "local_detail",
+              "probability": 0.45
+            },
+            {
+              "label": "User may ask to inspect the full previous process output chunk.",
+              "source_loop_offset": 1,
+              "dependency": "raw_content",
+              "probability": 0.12
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "large_mcp_or_web_result",
+      "description": "External tool returns a large web/MCP payload. The useful part is usually a summary plus source handle.",
+      "loops": [
+        {
+          "name": "search_external_docs",
+          "user_tokens": 130,
+          "assistant_final_tokens": 520,
+          "tool_calls": [
+            {
+              "name": "mcp search docs",
+              "capability": "docs_search",
+              "purpose_tokens": 46,
+              "args_tokens": 90,
+              "outputs": {
+                "raw": 24000,
+                "exact_excerpt": 2200,
+                "summary": 680,
+                "handle": 180
+              },
+              "preserve": "reference",
+              "recovery_tokens": {
+                "local_detail": 2200,
+                "exact_evidence": 2200
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.4,
+            "global_conclusion": 0.35,
+            "local_detail": 0.15,
+            "exact_evidence": 0.1,
+            "raw_content": 0.08
+          }
+        }
+      ]
+    },
+    {
+      "name": "incremental_workspace_audit",
+      "description": "Longer session where the user gradually asks the agent to inspect several project areas before making an architecture decision. This is where threshold snapshots should matter even after capability-level output shaping.",
+      "loops": [
+        {
+          "name": "inspect_session_projection",
+          "user_tokens": 120,
+          "assistant_final_tokens": 430,
+          "tool_calls": [
+            {
+              "name": "read session.rs projection",
+              "capability": "read_file",
+              "purpose_tokens": 40,
+              "args_tokens": 48,
+              "outputs": {
+                "raw": 8200,
+                "exact_excerpt": 2100,
+                "summary": 300,
+                "handle": 90
+              },
+              "preserve": "working_evidence",
+              "recovery_tokens": {
+                "exact_evidence": 2100,
+                "local_detail": 1400
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.3,
+            "global_conclusion": 0.25,
+            "exact_evidence": 0.3,
+            "raw_content": 0.08,
+            "local_detail": 0.15
+          }
+        },
+        {
+          "name": "inspect_agent_loop",
+          "user_tokens": 105,
+          "assistant_final_tokens": 460,
+          "tool_calls": [
+            {
+              "name": "read agent.rs loop",
+              "capability": "read_file",
+              "purpose_tokens": 42,
+              "args_tokens": 50,
+              "outputs": {
+                "raw": 10500,
+                "exact_excerpt": 2400,
+                "summary": 340,
+                "handle": 90
+              },
+              "preserve": "working_evidence",
+              "recovery_tokens": {
+                "exact_evidence": 2400,
+                "local_detail": 1600
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.28,
+            "global_conclusion": 0.25,
+            "exact_evidence": 0.32,
+            "local_detail": 0.15
+          },
+          "raw_dependency_events": [
+            {
+              "label": "User compares this file with the previous session projection code.",
+              "source_loop_offset": 1,
+              "dependency": "exact_evidence",
+              "probability": 0.45
+            },
+            {
+              "label": "User may need the full previous session projection file again.",
+              "source_loop_offset": 1,
+              "dependency": "raw_content",
+              "probability": 0.12
+            }
+          ]
+        },
+        {
+          "name": "inspect_tools_boundary",
+          "user_tokens": 115,
+          "assistant_final_tokens": 420,
+          "tool_calls": [
+            {
+              "name": "read tools.rs",
+              "capability": "read_file",
+              "purpose_tokens": 38,
+              "args_tokens": 44,
+              "outputs": {
+                "raw": 7200,
+                "exact_excerpt": 1700,
+                "summary": 280,
+                "handle": 80
+              },
+              "preserve": "working_evidence",
+              "recovery_tokens": {
+                "exact_evidence": 1700,
+                "local_detail": 900
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.35,
+            "global_conclusion": 0.3,
+            "exact_evidence": 0.25,
+            "local_detail": 0.1
+          },
+          "raw_dependency_events": [
+            {
+              "label": "User asks how this boundary relates to the session projection read earlier.",
+              "source_loop_offset": 2,
+              "dependency": "exact_evidence",
+              "probability": 0.3
+            },
+            {
+              "label": "User may ask to reopen the full tools boundary file.",
+              "source_loop_offset": 1,
+              "dependency": "raw_content",
+              "probability": 0.1
+            }
+          ]
+        },
+        {
+          "name": "inspect_memory_store",
+          "user_tokens": 130,
+          "assistant_final_tokens": 500,
+          "tool_calls": [
+            {
+              "name": "read memory.rs",
+              "capability": "read_file",
+              "purpose_tokens": 42,
+              "args_tokens": 48,
+              "outputs": {
+                "raw": 9600,
+                "exact_excerpt": 2200,
+                "summary": 360,
+                "handle": 90
+              },
+              "preserve": "working_evidence",
+              "recovery_tokens": {
+                "exact_evidence": 2200,
+                "local_detail": 1500
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.3,
+            "global_conclusion": 0.3,
+            "exact_evidence": 0.25,
+            "local_detail": 0.15
+          },
+          "raw_dependency_events": [
+            {
+              "label": "User brings back details from the earlier agent loop inspection.",
+              "source_loop_offset": 2,
+              "dependency": "exact_evidence",
+              "probability": 0.35
+            }
+          ]
+        },
+        {
+          "name": "run_targeted_tests",
+          "user_tokens": 80,
+          "assistant_final_tokens": 420,
+          "tool_calls": [
+            {
+              "name": "cargo test session agent memory",
+              "capability": "process_start",
+              "purpose_tokens": 36,
+              "args_tokens": 56,
+              "outputs": {
+                "raw": 15000,
+                "exact_excerpt": 1500,
+                "summary": 420,
+                "handle": 130
+              },
+              "preserve": "reference",
+              "recovery_tokens": {
+                "local_detail": 2000,
+                "continuation_handle": 130
+              }
+            }
+          ],
+          "dependency_probabilities": {
+            "none": 0.25,
+            "global_conclusion": 0.5,
+            "local_detail": 0.2,
+            "continuation_handle": 0.05
+          },
+          "raw_dependency_events": [
+            {
+              "label": "User asks whether the test result changes the memory-store finding.",
+              "source_loop_offset": 1,
+              "dependency": "local_detail",
+              "probability": 0.25
+            }
+          ]
+        },
+        {
+          "name": "make_architecture_decision",
+          "user_tokens": 150,
+          "assistant_final_tokens": 760,
+          "tool_calls": [],
+          "dependency_probabilities": {
+            "none": 0.4,
+            "global_conclusion": 0.6
+          },
+          "raw_dependency_events": [
+            {
+              "label": "Decision turn requires exact evidence from the session projection read.",
+              "source_loop_offset": 5,
+              "dependency": "exact_evidence",
+              "probability": 0.25
+            },
+            {
+              "label": "Decision turn requires exact evidence from the memory-store read.",
+              "source_loop_offset": 2,
+              "dependency": "exact_evidence",
+              "probability": 0.3
+            },
+            {
+              "label": "Decision turn may need one full raw source file again.",
+              "source_loop_offset": 3,
+              "dependency": "raw_content",
+              "probability": 0.18
+            },
+            {
+              "label": "Decision turn may need targeted test detail.",
+              "source_loop_offset": 1,
+              "dependency": "local_detail",
+              "probability": 0.2
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

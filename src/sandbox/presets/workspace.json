@@ -1,0 +1,110 @@
+{
+  "sandbox": {
+    "preset": "workspace",
+    "presets": {
+      "workspace": {
+        "filesystem": {
+          "mounts": [
+            {
+              "path": "*",
+              "access": "ro"
+            },
+            {
+              "path": ".",
+              "access": "rw"
+            },
+            {
+              "path": "$TMPDIR",
+              "access": "rw"
+            }
+          ],
+          "rules": [
+            {
+              "path": ".env",
+              "access": "none"
+            },
+            {
+              "path": ".env.*",
+              "access": "none"
+            },
+            {
+              "path": ".git",
+              "access": "ro"
+            },
+            {
+              "path": "*.pem",
+              "access": "none"
+            },
+            {
+              "path": "*.key",
+              "access": "none"
+            },
+            {
+              "path": "id_rsa",
+              "access": "none"
+            },
+            {
+              "path": "id_ed25519",
+              "access": "none"
+            },
+            {
+              "path": "*.p12",
+              "access": "none"
+            },
+            {
+              "path": "*.pfx",
+              "access": "none"
+            }
+          ]
+        },
+        "network": {
+          "mode": "proxy",
+          "hosts": {
+            "*": "ask",
+            "127.0.0.1": "allow",
+            "::1": "allow",
+            "localhost": "allow"
+          },
+          "addresses": {
+            "127.0.0.0/8": "ask",
+            "::1/128": "ask",
+            "10.0.0.0/8": "ask",
+            "172.16.0.0/12": "ask",
+            "192.168.0.0/16": "ask",
+            "100.64.0.0/10": "ask",
+            "169.254.0.0/16": "deny",
+            "0.0.0.0/8": "deny",
+            "::/128": "deny"
+          }
+        },
+        "env": {
+          "*": "allow"
+        },
+        "permissions": {
+          "tools": {},
+          "shell": {
+            "bash -c": "ask",
+            "bash -lc": "ask",
+            "chmod": "ask",
+            "chown": "ask",
+            "dd": "ask",
+            "find -delete": "ask",
+            "git push": "ask",
+            "git reset --hard": "ask",
+            "mkfs": "ask",
+            "node -e": "ask",
+            "python -c": "ask",
+            "python3 -c": "ask",
+            "rm -fr": "deny",
+            "rm -r": "ask",
+            "rm -rf": "deny",
+            "sh -c": "ask",
+            "sudo": "ask",
+            "zsh -c": "ask",
+            "zsh -lc": "ask"
+          }
+        }
+      }
+    }
+  }
+}

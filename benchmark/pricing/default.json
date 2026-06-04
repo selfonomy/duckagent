@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "name": "openai-gpt-5.4",
+    "source": "https://openai.com/api/pricing/",
+    "checked_at": "2026-05-10",
+    "notes": "OpenAI standard processing price. Cached input uses the official cached input column."
+  },
+  "pricing": {
+    "currency": "USD",
+    "input_per_million": 2.5,
+    "cached_input_per_million": 0.25,
+    "output_per_million": 15.0,
+    "recovery_latency_penalty_ms": 900.0,
+    "request_latency_ms": 650.0
+  },
+  "cache": {
+    "min_tokens": 1024,
+    "step_tokens": 128,
+    "ttl_turns": 1000
+  },
+  "limits": {
+    "context_tokens": 1050000,
+    "input_tokens": 922000,
+    "output_tokens": 128000
+  },
+  "simulation": {
+    "system_tokens": 1800,
+    "tool_schema_tokens": 2400,
+    "memory_catalog_tokens": 420,
+    "tool_call_overhead_tokens": 28,
+    "loop_compaction_overhead_tokens": 96,
+    "snapshot_overhead_tokens": 256,
+    "context_threshold_tokens": 14000,
+    "large_tool_output_threshold_tokens": 16000,
+    "keep_recent_loops_on_snapshot": 1,
+    "compaction_output_tokens_per_loop": 180,
+    "recovery_model_overhead_tokens": 1400,
+    "failure_penalty_cost": 0.02
+  }
+}

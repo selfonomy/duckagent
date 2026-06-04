@@ -1,0 +1,33 @@
+---
+import MobileMenuFooter from '@astrojs/starlight/components/MobileMenuFooter.astro';
+import SidebarPersister from '@astrojs/starlight/components/SidebarPersister.astro';
+import SidebarSublist from '@astrojs/starlight/components/SidebarSublist.astro';
+
+const { sidebar } = Astro.locals.starlightRoute;
+const pathname = Astro.url.pathname;
+
+const sectionForPath = (path: string) => {
+  if (path.startsWith('/start/')) return 'Start';
+  if (path.startsWith('/avatar/')) return 'Avatar & Identity';
+  if (path.startsWith('/capabilities/')) return 'Capabilities';
+  if (path.startsWith('/benchmark/')) return 'Benchmark';
+  if (path.startsWith('/gateway/')) return 'Gateway';
+  if (path.startsWith('/sandbox/')) return 'Sandbox';
+  if (path.startsWith('/reference/')) return 'Reference';
+  if (path.startsWith('/development/')) return 'Development';
+  return undefined;
+};
+
+const section = sectionForPath(pathname);
+const visibleSidebar = section
+  ? sidebar.filter((entry) => entry.type === 'group' && entry.label === section)
+  : sidebar;
+---
+
+<SidebarPersister>
+  <SidebarSublist sublist={visibleSidebar.length > 0 ? visibleSidebar : sidebar} />
+</SidebarPersister>
+
+<div class="md:sl-hidden">
+  <MobileMenuFooter />
+</div>
