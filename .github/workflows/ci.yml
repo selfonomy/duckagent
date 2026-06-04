@@ -514,33 +514,49 @@ jobs:
           set -euo pipefail
           tmp="$(mktemp -d)"
           server_log="$tmp/server.log"
-          python3 -u - "$tmp" >"$server_log" 2>&1 <<'PY' &
-          import http.server
+          cat > "$tmp/localhost_server.py" <<'PY'
           import os
+          import socket
           import sys
 
           root = sys.argv[1]
           port_path = os.path.join(root, "server-port")
           hit_path = os.path.join(root, "server-hit")
+          body = b"duckagent-localhost-bypass-hit"
 
-          class Handler(http.server.BaseHTTPRequestHandler):
-              def do_GET(self):
-                  with open(hit_path, "a", encoding="utf-8") as fh:
-                      fh.write(self.path + "\n")
-                  body = b"duckagent-localhost-bypass-hit"
-                  self.send_response(200)
-                  self.send_header("Content-Length", str(len(body)))
-                  self.end_headers()
-                  self.wfile.write(body)
+          server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          server.bind(("127.0.0.1", 0))
+          server.listen(8)
+          with open(port_path + ".tmp", "w", encoding="utf-8") as fh:
+              fh.write(str(server.getsockname()[1]))
+          os.replace(port_path + ".tmp", port_path)
+          print(f"listening on 127.0.0.1:{server.getsockname()[1]}", flush=True)
 
-              def log_message(self, _format, *args):
-                  pass
-
-          server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-          with open(port_path, "w", encoding="utf-8") as fh:
-              fh.write(str(server.server_address[1]))
-          server.serve_forever()
+          while True:
+              conn, _addr = server.accept()
+              with conn:
+                  conn.settimeout(10)
+                  try:
+                      data = conn.recv(4096)
+                  except socket.timeout:
+                      data = b""
+                  if data:
+                      request_line = data.split(b"\r\n", 1)[0].decode("ascii", "replace")
+                      parts = request_line.split(" ")
+                      path = parts[1] if len(parts) > 1 else request_line
+                      with open(hit_path, "a", encoding="utf-8") as fh:
+                          fh.write(path + "\n")
+                  response = (
+                      b"HTTP/1.1 200 OK\r\n"
+                      + f"Content-Length: {len(body)}\r\n".encode("ascii")
+                      + b"Connection: close\r\n"
+                      + b"\r\n"
+                      + body
+                  )
+                  conn.sendall(response)
           PY
+          python3 -u "$tmp/localhost_server.py" "$tmp" >"$server_log" 2>&1 &
           server_pid="$!"
           cleanup() {
             kill "$server_pid" 2>/dev/null || true
@@ -549,7 +565,7 @@ jobs:
           }
           trap cleanup EXIT
 
-          for _ in $(seq 1 300); do
+          for attempt in $(seq 1 1200); do
             if [ -s "$tmp/server-port" ]; then
               break
             fi
@@ -557,6 +573,10 @@ jobs:
               echo "localhost test server exited before writing a port"
               cat "$server_log"
               exit 1
+            fi
+            if [ $((attempt % 200)) -eq 0 ]; then
+              echo "waiting for localhost test server to write a port"
+              cat "$server_log"
             fi
             sleep 0.05
           done
