@@ -192,6 +192,7 @@ fn run() -> Result<()> {
         return run_cli_command(command);
     }
 
+    profiles::pin_active_profile()?;
     let session_manager = SessionManager::new_default()?;
     refresh_models_dev_cache_background();
     let runtime = match resolve_runtime_provider(None, None) {
@@ -300,6 +301,7 @@ fn run_cli_command(command: Commands) -> Result<()> {
             }
         },
         Commands::Gateway(command) => {
+            profiles::pin_active_profile()?;
             let session_manager = SessionManager::new_default()?;
             gateway::run(command, session_manager.clone(), SYSTEM_PROMPT)?;
         }

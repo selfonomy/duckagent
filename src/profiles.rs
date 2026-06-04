@@ -52,6 +52,12 @@ pub fn active_profile_name() -> Result<String> {
     Ok(validate_profile_name(name)?.to_string())
 }
 
+pub fn pin_active_profile() -> Result<String> {
+    let profile = active_profile_name()?;
+    set_cli_profile_override(Some(profile.clone()))?;
+    Ok(profile)
+}
+
 pub fn set_active_profile_name(name: &str) -> Result<()> {
     let name = validate_profile_name(name)?.to_string();
     ensure_profile(&name)?;

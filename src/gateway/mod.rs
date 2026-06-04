@@ -705,6 +705,7 @@ fn serve_gateway_service(
     session_manager: SessionManager,
     system_prompt: &'static str,
 ) -> Result<()> {
+    crate::profiles::pin_active_profile()?;
     serve_gateway_inner(session_manager, system_prompt)
 }
 

@@ -3,6 +3,7 @@ use super::default_gateway_logs_dir;
 use super::default_gateway_run_dir;
 #[cfg(target_os = "windows")]
 use super::default_gateway_service_dir;
+use crate::profiles;
 use anyhow::{Context, Result, bail};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
@@ -203,6 +204,7 @@ fn write_launchd_plist(disabled: bool) -> Result<()> {
     fs::create_dir_all(&logs_dir)
         .with_context(|| format!("failed to create gateway log dir: {}", logs_dir.display()))?;
     let exe = std::env::current_exe().context("failed to resolve current duck executable")?;
+    let profile = profiles::active_profile_name()?;
     let cwd = std::env::current_dir().context("failed to resolve current working directory")?;
     let environment_block = launchd_environment_block(&captured_service_environment());
     let disabled_block = if disabled {
@@ -220,6 +222,8 @@ fn write_launchd_plist(disabled: bool) -> Result<()> {
   <key>ProgramArguments</key>
   <array>
     <string>{exe}</string>
+    <string>--profile</string>
+    <string>{profile}</string>
     <string>gateway</string>
     <string>__service-run</string>
   </array>
@@ -238,9 +242,10 @@ fn write_launchd_plist(disabled: bool) -> Result<()> {
   <string>{stderr}</string>{disabled_block}
 </dict>
 </plist>
-"#,
+        "#,
         label = xml_escape(GATEWAY_SERVICE_LABEL),
         exe = xml_escape(&exe.to_string_lossy()),
+        profile = xml_escape(&profile),
         cwd = xml_escape(&cwd.to_string_lossy()),
         environment_block = environment_block,
         stdout = xml_escape(&logs_dir.join("service.stdout.log").to_string_lossy()),
@@ -292,11 +297,13 @@ fn write_systemd_unit() -> Result<()> {
             .with_context(|| format!("failed to create systemd user dir: {}", parent.display()))?;
     }
     let exe = std::env::current_exe().context("failed to resolve current duck executable")?;
+    let profile = profiles::active_profile_name()?;
     let cwd = std::env::current_dir().context("failed to resolve current working directory")?;
     let environment_lines = systemd_environment_lines(&captured_service_environment());
     let unit = format!(
-        "[Unit]\nDescription=DuckAgent Gateway\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nExecStart={} gateway __service-run\nRestart=on-failure\nRestartSec=5\nWorkingDirectory={}\n{}\n[Install]\nWantedBy=default.target\n",
+        "[Unit]\nDescription=DuckAgent Gateway\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nExecStart={} --profile {} gateway __service-run\nRestart=on-failure\nRestartSec=5\nWorkingDirectory={}\n{}\n[Install]\nWantedBy=default.target\n",
         systemd_escape(&exe.to_string_lossy()),
+        systemd_escape(&profile),
         systemd_escape(&cwd.to_string_lossy()),
         environment_lines
     );
@@ -426,13 +433,15 @@ fn write_windows_launcher() -> Result<()> {
         })?;
     }
     let exe = std::env::current_exe().context("failed to resolve current duck executable")?;
+    let profile = profiles::active_profile_name()?;
     let cwd = std::env::current_dir().context("failed to resolve current working directory")?;
     let environment_lines = windows_environment_lines(&captured_service_environment());
     let content = format!(
-        "@echo off\r\n{}cd /d {}\r\n{} gateway __service-run\r\n",
+        "@echo off\r\n{}cd /d {}\r\n{} --profile {} gateway __service-run\r\n",
         environment_lines,
         quote_windows_arg(&cwd.to_string_lossy()),
-        quote_windows_arg(&exe.to_string_lossy())
+        quote_windows_arg(&exe.to_string_lossy()),
+        quote_windows_arg(&profile)
     );
     fs::write(&launcher, content)
         .with_context(|| format!("failed to write gateway launcher: {}", launcher.display()))
