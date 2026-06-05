@@ -1,7 +1,12 @@
-# DuckAgent
+<p align="center">
+  <img src="src/default/favicon.png" alt="DuckAgent logo" width="180" height="180">
+</p>
+
+<h1 align="center">DuckAgent</h1>
 
 <p align="center">
-  <img src="src/default/favicon.png" alt="DuckAgent logo" width="96" height="96">
+  <strong>A local-first AI agent runtime in one compact Rust binary.</strong><br>
+  Bring your own model, your own workspace, your own identity, and a sandbox you can actually read.
 </p>
 
 <p align="center">
@@ -10,17 +15,21 @@
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/License-Apache--2.0-green?style=for-the-badge" alt="License: Apache-2.0"></a>
 </p>
 
-DuckAgent is a Rust-native local AI agent runtime. The default entrypoint is:
+DuckAgent is an agent runtime you configure and run locally. It talks to 30+
+LLM providers, including Anthropic, OpenAI, Gemini, Bedrock, Copilot,
+OpenRouter, DeepSeek, Kimi, Qwen, xAI, Ollama Cloud, Azure Foundry, and custom
+OpenAI-compatible endpoints. It reaches people and systems through 30+ Gateway
+channels: Telegram, Slack, Discord, Matrix, Signal, email, SMS, WhatsApp,
+Home Assistant, voice bridges, webhooks, and an API server. It acts through
+capabilities such as filesystem, shell/process, web search/extract, memory,
+cron, MCP servers, skills, and custom runtime tools.
 
-```bash
-duck
-```
+Everything runs on your machine, with your keys, in your workspace. Use it as a
+fast terminal UI (`duck`) or keep it alive as a service
+(`duck gateway service start`) so chat apps, webhooks, and API clients can all
+talk to the same Agent Loop.
 
-It brings the local TUI, model management, profiles, SillyTavern avatar cards,
-durable memory, skills, gateway channels, sandbox policy, MCP, and Web
-Search/Extract into one runtime.
-
-## Quick Install
+## ⚡ Quick Install
 
 Linux, macOS, and WSL2:
 
@@ -34,73 +43,185 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/selfonomy/duckagent/main/scripts/install.ps1 | iex
 ```
 
-After installation:
+After installation, choose how you want to run it:
 
 ```bash
+# Local terminal UI: fastest way to chat, approve tools, switch models, and work.
 duck
+
+# Long-running service: Gateway channels, API clients, automations, and webhooks.
+duck gateway service start
 ```
 
 Full docs: [GitHub Pages](https://selfonomy.github.io/duckagent/)
 
-## Highlights
+## ✨ Why DuckAgent Feels Different
 
-- **Rust-native Agent Runtime**: MainAgent calls files, processes, search, MCP,
-  Skills, and other runtime capabilities through the stable `call_capability`
-  interface.
-- **Cache-friendly append-only prompt**: one stable system prompt stays first;
-  capabilities, `SOUL.md`, `USER.md`, avatar cards, memory, sandbox state, and
-  projected history are injected after that stable prefix.
-- **Append-only sessions**: session JSONL is never rewritten. Rewind,
-  compaction, memory changes, and runtime changes are represented as appended
-  events or model-visible projections.
-- **Slash-command rewind**: `/rewind` lists user turns and can restore tracked
-  file changes from `write_file`, `edit`, and `apply_patch` snapshots when the
-  current file state still matches the recorded after-state.
-- **Profiles**: each profile owns its model config, credentials, memory, skills,
-  gateway config, `SOUL.md`, `USER.md`, optional `AGENTS.md`, and avatar files.
-- **SillyTavern card support**: `avatar.png` can be a SillyTavern PNG card.
-  DuckAgent extracts embedded character metadata and injects it as dynamic
+- 🦆 **One compact Rust runtime**: a native binary for macOS, Linux, Windows,
+  and WSL2. No giant app shell required.
+- 🧠 **30+ model providers**: Anthropic, OpenAI, Gemini, Bedrock, Copilot,
+  OpenRouter, DeepSeek, Kimi, Qwen, xAI, Ollama Cloud, Azure Foundry, and
+  custom OpenAI-compatible endpoints.
+- 💬 **30+ channels**: use the same Agent Loop from the TUI, Telegram, Slack,
+  Discord, Matrix, Signal, email, SMS, WhatsApp, Home Assistant, voice bridges,
+  webhooks, and the OpenAI-compatible API Server.
+- 🛡️ **Real sandbox policy**: JSON-configured filesystem mounts, path rules,
+  network allow/ask/deny, environment handling, tool approvals, and shell
+  command permissions.
+- 🧩 **MCP + skills**: load MCP servers, built-in capabilities, and profile
+  skills backed by `SKILL.md` files.
+- 🪪 **Portable identity**: every profile owns its own model config,
+  credentials, Gateway config, memory, skills, `SOUL.md`, `USER.md`,
+  optional `AGENTS.md`, and avatar files.
+- 🎭 **SillyTavern card support**: `avatar.png` can be a SillyTavern PNG card.
+  DuckAgent extracts embedded character metadata and injects it as profile
   context.
-- **Gateway**: connect the same Agent Loop to Telegram, Slack, Signal, Matrix,
-  Discord, API Server, Email, SMS, WhatsApp, and many other channels.
-- **Scheduled tasks**: ask for reminders or recurring automations in normal
-  language. The program-internal scheduler stores jobs as append-only JSONL and
-  fires them from the long-running gateway service without installing OS cron
-  entries.
-- **Sandbox**: config-driven filesystem, network, environment, secret
-  injection, tool approval, and shell approval policy.
-- **Benchmarked context projection**: the current guarded recoverable context
-  policy maps to the `recoverable_decay_guarded_mid` benchmark family and keeps
-  exact recovery handles instead of blindly summarizing every tool result.
-- **Web capability**: defaults to `web_search=exa` and `web_extract=local`,
-  with optional local Chrome fallback for JavaScript-heavy pages.
+- 🔁 **Rewind instead of regret**: `/rewind` lists user turns and can restore
+  tracked file edits from `write_file`, `edit`, and `apply_patch` snapshots
+  when checksums prove it is safe.
+- 🧬 **Self-improving memory**: profile-scoped memories, active memory
+  catalogs, `SOUL.md`, and `USER.md` let the agent get better at working with
+  you without smearing one profile into another.
+- 🔎 **Search works out of the box**: `web_search` defaults to Exa MCP, so a new
+  install can search immediately. Configure an Exa key later if you want your
+  own quota. Extraction defaults to local parsing with optional browser
+  fallback.
+- 📅 **Automations without OS cron**: ask for reminders or recurring tasks in
+  normal language; the Gateway service runs them from append-only job logs.
+- 💸 **Cache-friendly prompt design**: one stable system prompt stays first,
+  dynamic context is appended after it, and long tool history is projected into
+  recoverable summaries instead of being resent forever.
 
-## Benchmark And Context Projection
+## 📊 Benchmark And Token Savings
 
-The benchmark suite under `benchmark/` compares long-running Agent Loop context
-policies without calling an LLM or mutating real sessions.
-
-The runtime currently uses `ContextProjectionPolicy::guarded_mid`, which maps
-to the guarded recoverable policy shown in reports as
+DuckAgent ships an offline benchmark suite under `benchmark/` for long-running
+Agent Loop context policy. The current runtime uses
+`ContextProjectionPolicy::guarded_mid`, reported as
 `duckagent_recoverable_decay_guarded_mid`.
 
-The policy is cache-friendly:
-
-- the system prompt remains a stable first message;
-- available capabilities are injected as dynamic context for `call_capability`;
-- `SOUL.md`, `USER.md`, avatar cards, memory, and sandbox state are appended or
-  projected after the stable prefix;
-- active tool output stays raw until prompt pressure appears;
-- compressed tool history keeps recovery handles such as path, offset, limit,
-  process id, cursor, mode, and query.
+The important idea: DuckAgent keeps the active loop rich while there is room,
+then compresses completed tool history into recoverable summaries with exact
+handles such as path, offset, limit, process id, cursor, mode, and query. The
+model can recover the exact detail it needs without paying to resend every raw
+tool result forever.
 
 In `benchmark/results/guarded-mid-vs-balanced-combined/report.md`, guarded-mid
-completed `1188/1188` simulated turns and saved roughly `108M` raw tool tokens
-through structured projection. Against the balanced policy, the report shows
-`22.6%` lower simulated cost on `openai-gpt-5.4`, `14.5%` lower on `kimi-k2.6`,
-and `16.9%` lower on `deepseek-v4-flash`.
+completed `1188/1188` simulated turns and saved roughly **108M raw tool
+tokens** through structured projection.
 
-## Common Commands
+| Model profile | Guarded-mid cache hit | Versus balanced |
+| --- | ---: | --- |
+| `openai-gpt-5.4` | `96.6%` | `22.6%` lower simulated cost, `23.7%` fewer expected tokens |
+| `openai-gpt-5.5` | `96.6%` | `22.6%` lower simulated cost, `23.7%` fewer expected tokens |
+| `openai-gpt-5.4-mini` | `87.5%` | `8.1%` lower simulated cost, `30.8%` fewer expected tokens |
+| `kimi-k2.6` | `87.3%` | `14.5%` lower simulated cost, `30.6%` fewer expected tokens |
+| `deepseek-chat` | `91.3%` | Same as balanced on the `128K` prompt profile |
+| `deepseek-v4-flash` | `97.0%` | `16.9%` lower simulated cost, `21.3%` fewer expected tokens |
+| `deepseek-v4-pro-promo` | `97.0%` | `15.6%` lower simulated cost, `21.3%` fewer expected tokens |
+
+These numbers come from an offline simulator, not a billing guarantee. They are
+still useful because they make context policy measurable instead of vibes-only.
+
+## 🛡️ Default Sandbox
+
+DuckAgent defaults to the `workspace` sandbox. It is built for daily agent work:
+read broadly, write only to the current workspace and temp directory, hide
+common secrets, keep `.git` read-only, route ordinary network through a managed
+proxy, and ask before risky shell command classes.
+
+The active preset is stored in `~/.duckagent/config.json`:
+
+```json
+{
+  "sandbox": {
+    "preset": "workspace"
+  }
+}
+```
+
+The default `workspace` preset expands to:
+
+```json
+{
+  "filesystem": {
+    "mounts": [
+      { "path": "*", "access": "ro" },
+      { "path": ".", "access": "rw" },
+      { "path": "$TMPDIR", "access": "rw" }
+    ],
+    "rules": [
+      { "path": ".env", "access": "none" },
+      { "path": ".env.*", "access": "none" },
+      { "path": ".git", "access": "ro" },
+      { "path": "*.pem", "access": "none" },
+      { "path": "*.key", "access": "none" },
+      { "path": "id_rsa", "access": "none" },
+      { "path": "id_ed25519", "access": "none" },
+      { "path": "*.p12", "access": "none" },
+      { "path": "*.pfx", "access": "none" }
+    ]
+  },
+  "network": {
+    "mode": "proxy",
+    "hosts": {
+      "*": "ask",
+      "127.0.0.1": "allow",
+      "::1": "allow",
+      "localhost": "allow"
+    },
+    "addresses": {
+      "127.0.0.0/8": "ask",
+      "::1/128": "ask",
+      "10.0.0.0/8": "ask",
+      "172.16.0.0/12": "ask",
+      "192.168.0.0/16": "ask",
+      "100.64.0.0/10": "ask",
+      "169.254.0.0/16": "deny",
+      "0.0.0.0/8": "deny",
+      "::/128": "deny"
+    }
+  },
+  "env": {
+    "*": "allow"
+  },
+  "permissions": {
+    "tools": {},
+    "shell": {
+      "bash -c": "ask",
+      "bash -lc": "ask",
+      "chmod": "ask",
+      "chown": "ask",
+      "dd": "ask",
+      "find -delete": "ask",
+      "git push": "ask",
+      "git reset --hard": "ask",
+      "mkfs": "ask",
+      "node -e": "ask",
+      "python -c": "ask",
+      "python3 -c": "ask",
+      "rm -fr": "deny",
+      "rm -r": "ask",
+      "rm -rf": "deny",
+      "sh -c": "ask",
+      "sudo": "ask",
+      "zsh -c": "ask",
+      "zsh -lc": "ask"
+    }
+  }
+}
+```
+
+Inspect or switch sandbox behavior:
+
+```bash
+duck sandbox list
+duck sandbox get workspace
+duck sandbox check workspace
+duck --sandbox readonly
+duck --sandbox danger
+```
+
+## 🧭 Common Commands
 
 ```bash
 duck
@@ -153,7 +274,7 @@ snapshots were recorded after the target turn, DuckAgent restores old file
 contents or deletes newly-created files only if the current file still matches
 the recorded post-change checksum.
 
-## Configuration Location
+## 🗂️ Configuration Location
 
 ```text
 ~/.duckagent/
@@ -186,7 +307,7 @@ New profiles receive editable copies of the bundled default `avatar.png`,
 bundled persona. The default `USER.md` is intentionally blank so the agent does
 not assume user background or preferences.
 
-## Documentation
+## 📚 Documentation
 
 The documentation site lives in `docs/` and uses Astro + Starlight:
 
@@ -197,7 +318,7 @@ pnpm run dev
 pnpm run build
 ```
 
-## Repository Structure
+## 🧱 Repository Structure
 
 | Path | Purpose |
 | --- | --- |
@@ -208,11 +329,11 @@ pnpm run build
 | `src/` | Rust runtime, TUI, gateway, capabilities, sandbox, MCP, and providers. |
 | `LICENSE.txt` | Apache-2.0 license text. |
 
-## CI And Releases
+## 🚢 CI And Releases
 
 CI validates Rust formatting, repository metadata, docs builds, cross-target
 checks, native tests, and sandbox smoke coverage. Release tags matching `v*`
-build signed archive checksums for supported macOS, Linux, and Windows targets.
+build archive checksums for supported macOS, Linux, and Windows targets.
 
 ## License
 

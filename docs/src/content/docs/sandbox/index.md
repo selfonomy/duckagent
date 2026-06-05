@@ -4,7 +4,9 @@ description: Understand DuckAgent's sandbox as the execution boundary for local 
 draft: false
 ---
 
-Sandbox is one of DuckAgent's core safety features. It controls local tool execution: filesystem access, ordinary network access, environment inheritance, secret handling, MCP tool policy, and shell command policy.
+Sandbox is one of DuckAgent's core safety features. It controls local tool execution with a JSON policy: filesystem mounts, path rules, ordinary network allow/ask/deny behavior, environment inheritance, secret handling, MCP tool policy, and shell command policy.
+
+The goal is simple: DuckAgent should be useful on your real machine without acting like it owns your whole machine.
 
 Sandbox config lives in root config:
 
@@ -26,7 +28,7 @@ If no sandbox is configured, DuckAgent uses:
 }
 ```
 
-The default active preset is `workspace`.
+The default active preset is `workspace`: read broadly, write only to the workspace and temp directory, keep common secrets hidden, keep `.git` read-only, route ordinary network through the managed proxy, and ask before risky shell command classes.
 
 | Preset | When to use | Main behavior |
 | --- | --- | --- |
@@ -41,7 +43,7 @@ duck --sandbox readonly
 duck --sandbox danger
 ```
 
-Use `duck sandbox get <preset>` to inspect the resolved preset JSON that DuckAgent will use.
+Use `duck sandbox get <preset>` to inspect the resolved preset JSON that DuckAgent will use. The [Presets](/sandbox/presets/) page includes the full default `workspace` JSON.
 
 ## Network and env secrets
 

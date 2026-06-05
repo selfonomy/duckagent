@@ -19,40 +19,40 @@ const navLinks = [
 
 const featureBands = [
   {
-    label: 'Avatar',
+    label: 'Identity',
     href: docsPath('/avatar/'),
     stat: 'SOUL.md / USER.md / cards',
-    text: 'Portable identity, profile files, and SillyTavern card import.',
+    text: 'Profile-scoped identity, memories, skills, and SillyTavern card import.',
   },
   {
-    label: 'Capabilities',
+    label: 'Providers',
     href: docsPath('/capabilities/'),
-    stat: 'One runtime surface',
-    text: 'Built-in tools, cron, MCP, web, shell, memory, skills, and process control.',
+    stat: '30+ model routes',
+    text: 'Anthropic, OpenAI, Gemini, Bedrock, Copilot, OpenRouter, DeepSeek, Kimi, and custom endpoints.',
   },
   {
-    label: 'Rewind',
-    href: docsPath('/reference/session-rewind/'),
-    stat: 'Slash file restore',
-    text: 'Resume or rewind sessions and safely restore tracked file edits.',
+    label: 'Channels',
+    href: docsPath('/gateway/'),
+    stat: '30+ gateways',
+    text: 'TUI, API Server, Telegram, Slack, Discord, Matrix, email, SMS, voice, webhooks, and more.',
   },
   {
     label: 'Benchmark',
     href: docsPath('/benchmark/'),
-    stat: 'Guarded recoverable context',
-    text: '1188/1188 simulated turns and about 108M raw tool tokens saved.',
-  },
-  {
-    label: 'Gateway',
-    href: docsPath('/gateway/'),
-    stat: 'Service + channels',
-    text: 'OpenAI-compatible API, chat integrations, webhooks, and approvals.',
+    stat: '108M tokens saved',
+    text: 'Guarded recoverable context completed 1188/1188 simulated turns in the current report.',
   },
   {
     label: 'Sandbox',
     href: docsPath('/sandbox/'),
-    stat: 'Policy by preset',
-    text: 'Filesystem, network, environment, secrets, and shell boundaries.',
+    stat: 'JSON policy',
+    text: 'Filesystem, network, environment, tool, and shell boundaries you can inspect and tune.',
+  },
+  {
+    label: 'Rewind',
+    href: docsPath('/reference/session-rewind/'),
+    stat: 'Undo with checksums',
+    text: 'Resume, rewind, and safely restore tracked file edits from append-only sessions.',
   },
 ];
 
@@ -64,7 +64,7 @@ const featureBands = [
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="DuckAgent documentation for the Rust-native AI agent runtime."
+      content="DuckAgent documentation for the local-first Rust AI agent runtime with providers, channels, sandbox, profiles, memory, MCP, skills, and cache-friendly context."
     />
     <title>DuckAgent</title>
     <link rel="icon" type="image/png" href={docsPath('/favicon.png')} />
@@ -87,22 +87,22 @@ const featureBands = [
 
         <div class="hero-shell">
           <div class="hero-copy">
-            <p class="eyebrow">Rust-native AI Agent Runtime</p>
+            <p class="eyebrow">Local-first Rust Agent Runtime</p>
             <h1>DuckAgent</h1>
             <p class="lede">
-              A local-first agent with a precise TUI, gateway channels, portable avatar identity,
-              capability boundaries, benchmarked context projection, and a sandbox users can
-              actually understand.
+              One compact Rust binary for local agent work, 30+ model providers, 30+ chat and API
+              channels, profile-scoped identity, MCP and SKILL.md capabilities, rewindable sessions,
+              built-in search, and a JSON sandbox you can actually understand.
             </p>
             <div class="actions">
-              <a class="primary" href={docsPath('/start/')}>Start reading <span aria-hidden="true">-></span></a>
+              <a class="primary" href={docsPath('/start/')}>Run DuckAgent <span aria-hidden="true">-></span></a>
               <a class="secondary" href={docsPath('/benchmark/')}>Benchmark results</a>
             </div>
             <div class="micro-panel" aria-label="Runtime summary">
-              <span>MAIN AGENT</span>
-              <span>APPEND-ONLY PROMPT</span>
-              <span>BENCHMARKED CONTEXT</span>
-              <span>ONE SYSTEM PROMPT</span>
+              <span>30+ PROVIDERS</span>
+              <span>30+ CHANNELS</span>
+              <span>JSON SANDBOX</span>
+              <span>CACHE-FRIENDLY</span>
             </div>
           </div>
 
@@ -123,10 +123,10 @@ const featureBands = [
               </div>
             </div>
             <div class="telemetry" aria-label="Feature telemetry">
+              <span><strong>Providers</strong> 30+</span>
+              <span><strong>Channels</strong> 30+</span>
               <span><strong>Benchmark</strong> 1188/1188 turns</span>
-              <span><strong>Gateway</strong> channels</span>
-              <span><strong>Sandbox</strong> presets</span>
-              <span><strong>Cards</strong> import</span>
+              <span><strong>Search</strong> out of the box</span>
             </div>
           </div>
         </div>

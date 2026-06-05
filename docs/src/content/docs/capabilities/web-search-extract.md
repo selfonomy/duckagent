@@ -4,7 +4,7 @@ description: Configure web search, web extraction, Exa auth, local extraction, a
 draft: false
 ---
 
-Web capabilities are profile-scoped.
+Web capabilities are profile-scoped and designed to work immediately on a fresh install.
 
 Default config:
 
@@ -20,7 +20,7 @@ Default config:
 
 ## Search
 
-The default search provider is Exa. Store the Exa API key in profile `auth.json`, not in `config.json`.
+The default search provider is Exa MCP, so `web_search` is available out of the box. Later, if you want your own Exa quota or stricter account control, store the Exa API key in profile `auth.json`, not in `config.json`.
 
 ## Extract
 
