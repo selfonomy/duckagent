@@ -47,7 +47,7 @@ Use [Configure Channels](/gateway/configure-channels/) for field defaults, `auth
 Gateway channels share these commands with the TUI:
 
 ```text
-/new [title]
+/new
 /resume
 /resume <number>
 /rewind

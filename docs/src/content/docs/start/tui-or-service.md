@@ -38,7 +38,7 @@ duck gateway service stop
 The TUI and Gateway share session-control commands:
 
 ```text
-/new [title]
+/new
 /resume
 /resume <number>
 /rewind

@@ -141,7 +141,7 @@ duck gateway service start
 Session control slash commands work in the TUI and Gateway channels:
 
 ```text
-/new [title]
+/new
 /resume
 /resume 2
 /rewind

@@ -1590,7 +1590,7 @@ impl GatewayRuntime {
     ) -> Result<()> {
         let key = input.session_key();
         match command {
-            SessionControlCommand::New { title } => {
+            SessionControlCommand::New => {
                 if let Some(old_session_id) = self.sessions.get(&key) {
                     self.agent.clear_session_runtime_state(&old_session_id);
                     self.routes_by_session
@@ -1606,7 +1606,7 @@ impl GatewayRuntime {
                 let session_id = self
                     .session_manager
                     .create_session_with_runtime_and_source(
-                        title.as_deref(),
+                        None,
                         self.system_prompt,
                         self.agent.runtime().session_config(),
                         &format!("gateway:{}", key.channel),
@@ -1624,15 +1624,10 @@ impl GatewayRuntime {
                     .lock()
                     .expect("gateway session lists mutex poisoned")
                     .remove(&key);
-                let suffix = title
-                    .as_deref()
-                    .filter(|value| !value.trim().is_empty())
-                    .map(|value| format!(": {value}"))
-                    .unwrap_or_default();
                 send_control_text(
                     adapter,
                     &route,
-                    &format!("Started a new session{suffix}."),
+                    "Started a new session.",
                     input.message_id.clone(),
                 )?;
             }

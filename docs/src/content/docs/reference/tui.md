@@ -21,7 +21,7 @@ draft: false
 
 | Command | Behavior |
 | --- | --- |
-| `/new [title]` | Start a fresh session. |
+| `/new` | Start a fresh session. |
 | `/resume` | List recent sessions. |
 | `/resume <number>` | Resume one session from the latest list. |
 | `/rewind` | List user-turn rewind points. |

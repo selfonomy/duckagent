@@ -46,7 +46,7 @@ const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     SlashCommandSpec {
         command: "/new",
         hint: "start a new session",
-        insert_text: "/new ",
+        insert_text: "/new",
     },
     SlashCommandSpec {
         command: "/resume",
@@ -1194,14 +1194,14 @@ impl ChatUi {
         stdout: &mut io::Stdout,
     ) -> Result<()> {
         match command {
-            SessionControlCommand::New { title } => {
+            SessionControlCommand::New => {
                 let old_session_id = self.session_id.clone();
                 self.agent.clear_session_runtime_state(&old_session_id);
                 let session_id = self
                     .agent
-                    .create_session_with_title(title.as_deref(), "tui")?;
+                    .create_session_with_title(None, "tui")?;
                 self.session_id = session_id;
-                self.session_title = title.unwrap_or_else(|| "Untitled session".to_string());
+                self.session_title = "Untitled session".to_string();
                 self.context_tokens = 0;
                 self.status = "Started a new session.".to_string();
                 self.last_session_list.clear();
@@ -1209,13 +1209,8 @@ impl ChatUi {
                 self.committed_history.clear();
                 self.pending_history.clear();
                 self.rendered_history_entries = 0;
-                let suffix = if self.session_title == "Untitled session" {
-                    String::new()
-                } else {
-                    format!(": {}", self.session_title)
-                };
                 self.queue_history_entries(self.with_message_gap(
-                    self.render_assistant_entries(&format!("Started a new session{suffix}.")),
+                    self.render_assistant_entries("Started a new session."),
                 ));
             }
             SessionControlCommand::Resume { index: None } => {

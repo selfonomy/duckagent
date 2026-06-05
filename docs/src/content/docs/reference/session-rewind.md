@@ -8,7 +8,7 @@ DuckAgent session control is exposed through slash commands in both the TUI and 
 
 | Command | Behavior |
 | --- | --- |
-| `/new [title]` | Start a new session for the current TUI or Gateway route. |
+| `/new` | Start a new session for the current TUI or Gateway route. |
 | `/resume` | List recent sessions for the current chat. |
 | `/resume <number>` | Resume one session from the latest `/resume` list. |
 | `/rewind` | List user-turn rewind points in the current session. |

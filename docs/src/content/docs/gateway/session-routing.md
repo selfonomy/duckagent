@@ -33,7 +33,7 @@ Gateway mapping state is append-only. `/new` and `/resume` append new route mapp
 ## Shared commands
 
 ```text
-/new [title]
+/new
 /resume
 /resume <number>
 /rewind

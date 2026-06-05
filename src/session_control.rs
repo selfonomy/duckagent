@@ -4,7 +4,7 @@ pub const SESSION_LIST_PAGE_SIZE: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionControlCommand {
-    New { title: Option<String> },
+    New,
     Resume { index: Option<usize> },
     Rewind { index: Option<usize> },
     Invalid { message: String },
@@ -27,9 +27,7 @@ pub fn parse_session_control_command(text: &str) -> Option<SessionControlCommand
     let command = parts.next()?.trim();
     let args = parts.next().unwrap_or("").trim();
     match command {
-        "/new" => Some(SessionControlCommand::New {
-            title: non_empty_arg(args),
-        }),
+        "/new" => Some(SessionControlCommand::New),
         "/resume" => {
             if args.is_empty() {
                 Some(SessionControlCommand::Resume { index: None })
@@ -100,8 +98,7 @@ pub fn paginate_session_items(
 
 pub fn format_session_list(items: &[SessionListItem], page: usize, total_pages: usize) -> String {
     if items.is_empty() {
-        return "No sessions found for this chat yet.\n\nUse `/new [title]` to start one."
-            .to_string();
+        return "No sessions found for this chat yet.\n\nUse `/new` to start one.".to_string();
     }
     let mut out = String::new();
     let _ = (page, total_pages);
@@ -136,11 +133,6 @@ pub fn format_rewind_list(items: &[RewindListItem]) -> String {
     out.trim_end().to_string()
 }
 
-fn non_empty_arg(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
-}
-
 fn compact_timestamp(value: &str) -> String {
     value
         .strip_suffix("+00:00")
@@ -156,10 +148,12 @@ mod tests {
     #[test]
     fn parses_session_control_commands() {
         assert_eq!(
+            parse_session_control_command("/new"),
+            Some(SessionControlCommand::New)
+        );
+        assert_eq!(
             parse_session_control_command("/new Travel plan"),
-            Some(SessionControlCommand::New {
-                title: Some("Travel plan".to_string())
-            })
+            Some(SessionControlCommand::New)
         );
         assert_eq!(
             parse_session_control_command("/resume"),
