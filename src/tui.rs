@@ -2603,8 +2603,11 @@ impl ChatUi {
         if delta.is_empty() {
             return;
         }
+        if should_defer_tool_call_preview(self.live_stream.as_ref()) {
+            return;
+        }
         let stream = self.ensure_live_stream(LiveStreamKind::ToolCall);
-        stream.raw_tool_args.push_str(delta);
+        merge_tool_call_arg_update(&mut stream.raw_tool_args, delta);
         stream.text = preview_tool_command(&stream.raw_tool_args);
     }
 
@@ -2614,6 +2617,12 @@ impl ChatUi {
             .as_ref()
             .is_none_or(|stream| stream.kind != kind);
         if needs_reset {
+            self.pending_preview_clear_lines = pending_preview_clear_lines_after_stream_switch(
+                self.live_stream.is_some(),
+                self.live_render_lines.len(),
+                self.pending_preview_clear_lines,
+                self.pending_live_finalize.is_some(),
+            );
             self.live_stream = Some(LiveStreamState {
                 kind,
                 text: String::new(),
@@ -2877,6 +2886,19 @@ impl ChatUi {
 
 fn preview_tool_command(raw_args: &str) -> String {
     extract_partial_command_value(raw_args).unwrap_or_default()
+}
+
+fn should_defer_tool_call_preview(live_stream: Option<&LiveStreamState>) -> bool {
+    matches!(live_stream, Some(stream) if stream.kind == LiveStreamKind::Assistant && !stream.text.is_empty())
+}
+
+fn merge_tool_call_arg_update(raw_args: &mut String, update: &str) {
+    if raw_args.is_empty() || update.starts_with(raw_args.as_str()) {
+        raw_args.clear();
+        raw_args.push_str(update);
+    } else {
+        raw_args.push_str(update);
+    }
 }
 
 fn slash_picker_should_show(input: &InputState) -> bool {
@@ -3267,6 +3289,19 @@ fn should_suppress_final_message(
     match kind {
         LiveStreamKind::Assistant => has_any_live_signal,
         LiveStreamKind::ToolCall => has_any_live_signal,
+    }
+}
+
+fn pending_preview_clear_lines_after_stream_switch(
+    has_live_stream: bool,
+    live_render_line_count: usize,
+    pending_clear_lines: usize,
+    has_pending_finalize: bool,
+) -> usize {
+    if has_live_stream && live_render_line_count > 0 && !has_pending_finalize {
+        pending_clear_lines.max(live_render_line_count)
+    } else {
+        pending_clear_lines
     }
 }
 
@@ -4162,6 +4197,45 @@ mod tests {
     }
 
     #[test]
+    fn tool_arg_update_accepts_cumulative_snapshots() {
+        let mut raw = String::new();
+        merge_tool_call_arg_update(&mut raw, "{");
+        merge_tool_call_arg_update(&mut raw, "{\"args\":{\"command\":\"node");
+        merge_tool_call_arg_update(&mut raw, "{\"args\":{\"command\":\"node index.js\"}}");
+
+        assert_eq!(raw, "{\"args\":{\"command\":\"node index.js\"}}");
+        assert_eq!(preview_tool_command(&raw), "node index.js");
+    }
+
+    #[test]
+    fn tool_arg_update_accepts_true_deltas() {
+        let mut raw = String::new();
+        merge_tool_call_arg_update(&mut raw, "{\"args\":");
+        merge_tool_call_arg_update(&mut raw, "{\"command\":\"node");
+        merge_tool_call_arg_update(&mut raw, " index.js\"}}");
+
+        assert_eq!(raw, "{\"args\":{\"command\":\"node index.js\"}}");
+        assert_eq!(preview_tool_command(&raw), "node index.js");
+    }
+
+    #[test]
+    fn tool_preview_defers_while_assistant_text_is_streaming() {
+        let mut assistant_stream = new_stream(LiveStreamKind::Assistant);
+        assistant_stream.text = "明白".to_string();
+        assert!(should_defer_tool_call_preview(Some(&assistant_stream)));
+
+        let empty_assistant_stream = new_stream(LiveStreamKind::Assistant);
+        assert!(!should_defer_tool_call_preview(Some(
+            &empty_assistant_stream
+        )));
+
+        let mut tool_stream = new_stream(LiveStreamKind::ToolCall);
+        tool_stream.text = "node index.js".to_string();
+        assert!(!should_defer_tool_call_preview(Some(&tool_stream)));
+        assert!(!should_defer_tool_call_preview(None));
+    }
+
+    #[test]
     fn braille_dot_mapping_matches_python_reference() {
         // dot_map = [0x01, 0x08, 0x02, 0x10, 0x04, 0x20, 0x40, 0x80]
         let ch = braille_char_from_bits([true, false, false, false, false, false, false, false]);
@@ -4381,6 +4455,26 @@ mod tests {
             false,
             false,
         ));
+    }
+
+    #[test]
+    fn stream_switch_marks_live_preview_for_clearing() {
+        assert_eq!(
+            pending_preview_clear_lines_after_stream_switch(true, 3, 0, false),
+            3
+        );
+        assert_eq!(
+            pending_preview_clear_lines_after_stream_switch(true, 2, 5, false),
+            5
+        );
+        assert_eq!(
+            pending_preview_clear_lines_after_stream_switch(true, 3, 0, true),
+            0
+        );
+        assert_eq!(
+            pending_preview_clear_lines_after_stream_switch(false, 3, 0, false),
+            0
+        );
     }
 
     #[test]

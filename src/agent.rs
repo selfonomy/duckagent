@@ -526,14 +526,10 @@ impl AgentRuntime {
                         });
                     }
                     StreamUpdate::ToolTurnText(content) => {
-                        let trimmed = content.trim();
-                        if !trimmed.is_empty() {
+                        if let Some(message) = ui_message_for_tool_turn_text(&content) {
                             event_bus.publish(AgentEvent::Message {
                                 session_id: main_session_id.clone(),
-                                message: UiMessage {
-                                    msg_type: MessageType::ToolCall,
-                                    content: trimmed.to_string(),
-                                },
+                                message,
                             });
                         }
                     }
@@ -1188,6 +1184,18 @@ fn count_tokens_with_retry(text: &str) -> usize {
         .unwrap_or_else(|_| estimate_tokens_rough(text))
 }
 
+fn ui_message_for_tool_turn_text(content: &str) -> Option<UiMessage> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(UiMessage {
+            msg_type: MessageType::Assistant,
+            content: trimmed.to_string(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1243,6 +1251,16 @@ mod tests {
         assert!(message.contains("conversation_id: conv"));
         assert!(message.contains("message_id: msg"));
         assert!(message.contains("hello"));
+    }
+
+    #[test]
+    fn tool_turn_text_renders_as_assistant_message() {
+        let message = ui_message_for_tool_turn_text("  Let me create that file.  ")
+            .expect("non-empty content should render");
+
+        assert_eq!(message.msg_type, MessageType::Assistant);
+        assert_eq!(message.content, "Let me create that file.");
+        assert!(ui_message_for_tool_turn_text(" \n\t ").is_none());
     }
 
     #[test]
