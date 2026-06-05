@@ -1197,9 +1197,7 @@ impl ChatUi {
             SessionControlCommand::New => {
                 let old_session_id = self.session_id.clone();
                 self.agent.clear_session_runtime_state(&old_session_id);
-                let session_id = self
-                    .agent
-                    .create_session_with_title(None, "tui")?;
+                let session_id = self.agent.create_session_with_title(None, "tui")?;
                 self.session_id = session_id;
                 self.session_title = "Untitled session".to_string();
                 self.context_tokens = 0;
@@ -1209,9 +1207,9 @@ impl ChatUi {
                 self.committed_history.clear();
                 self.pending_history.clear();
                 self.rendered_history_entries = 0;
-                self.queue_history_entries(self.with_message_gap(
-                    self.render_assistant_entries("Started a new session."),
-                ));
+                self.queue_history_entries(
+                    self.with_message_gap(self.render_assistant_entries("Started a new session.")),
+                );
             }
             SessionControlCommand::Resume { index: None } => {
                 let items = self.tui_session_items(None)?;
