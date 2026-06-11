@@ -17,7 +17,7 @@ Usage:
 
 Examples:
   curl -fsSL https://raw.githubusercontent.com/selfonomy/duckagent/main/scripts/install.sh | bash
-  curl -fsSL https://raw.githubusercontent.com/selfonomy/duckagent/main/scripts/install.sh | bash -s -- --version 0.1.2
+  curl -fsSL https://raw.githubusercontent.com/selfonomy/duckagent/main/scripts/install.sh | bash -s -- --version 0.1.3
 EOF
 }
 

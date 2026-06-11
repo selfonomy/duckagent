@@ -76,8 +76,82 @@ pub struct SessionMeta {
     pub goal: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal_token_budget: Option<i64>,
+    #[serde(default)]
+    pub goal_tokens_used: i64,
+    #[serde(default)]
+    pub goal_time_used_seconds: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal_created_at: Option<String>,
     #[serde(flatten, default)]
     pub runtime: SessionRuntimeConfig,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GoalStatus {
+    Active,
+    Paused,
+    Blocked,
+    UsageLimited,
+    BudgetLimited,
+    Complete,
+}
+
+impl GoalStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GoalStatus::Active => "active",
+            GoalStatus::Paused => "paused",
+            GoalStatus::Blocked => "blocked",
+            GoalStatus::UsageLimited => "usage_limited",
+            GoalStatus::BudgetLimited => "budget_limited",
+            GoalStatus::Complete => "complete",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value
+            .trim()
+            .replace('-', "_")
+            .replace("usageLimited", "usage_limited")
+            .replace("budgetLimited", "budget_limited")
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "active" | "running" => Some(Self::Active),
+            "paused" => Some(Self::Paused),
+            "blocked" => Some(Self::Blocked),
+            "usage_limited" | "usagelimited" => Some(Self::UsageLimited),
+            "budget_limited" | "budgetlimited" => Some(Self::BudgetLimited),
+            "complete" | "completed" => Some(Self::Complete),
+            _ => None,
+        }
+    }
+
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            GoalStatus::Blocked
+                | GoalStatus::UsageLimited
+                | GoalStatus::BudgetLimited
+                | GoalStatus::Complete
+        )
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionGoal {
+    pub session_id: String,
+    pub objective: String,
+    pub status: GoalStatus,
+    pub token_budget: Option<i64>,
+    pub tokens_used: i64,
+    pub time_used_seconds: i64,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -359,6 +433,10 @@ impl SessionManager {
             created_by: created_by.to_string(),
             goal: None,
             status: None,
+            goal_token_budget: None,
+            goal_tokens_used: 0,
+            goal_time_used_seconds: 0,
+            goal_created_at: None,
             runtime,
         };
 
@@ -420,6 +498,10 @@ impl SessionManager {
             created_by: normalized_created_by.to_string(),
             goal: Some(normalized_goal.to_string()),
             status: Some("running".to_string()),
+            goal_token_budget: None,
+            goal_tokens_used: 0,
+            goal_time_used_seconds: 0,
+            goal_created_at: Some(now.clone()),
             runtime,
         };
 
@@ -676,6 +758,100 @@ impl SessionManager {
 
     pub fn get_session_meta(&self, session_id: &str) -> Result<SessionMeta> {
         self.read_session_meta(session_id)
+    }
+
+    pub fn get_goal(&self, session_id: &str) -> Result<Option<SessionGoal>> {
+        let meta = self.read_session_meta(session_id)?;
+        Ok(session_goal_from_meta(&meta))
+    }
+
+    pub fn set_goal(
+        &self,
+        session_id: &str,
+        objective: &str,
+        token_budget: Option<i64>,
+    ) -> Result<SessionGoal> {
+        self.ensure_session_exists(session_id)?;
+        let objective = objective.trim();
+        validate_goal_objective(objective)?;
+        validate_goal_budget(token_budget)?;
+        let now = now_rfc3339();
+        let mut meta = self.read_session_meta(session_id)?;
+        meta.goal = Some(objective.to_string());
+        meta.status = Some(GoalStatus::Active.as_str().to_string());
+        meta.goal_token_budget = token_budget;
+        meta.goal_tokens_used = 0;
+        meta.goal_time_used_seconds = 0;
+        meta.goal_created_at = Some(now.clone());
+        meta.updated_at = now;
+        self.write_session_meta(&meta)?;
+        session_goal_from_meta(&meta).context("session goal missing after set")
+    }
+
+    pub fn update_goal_status(&self, session_id: &str, status: GoalStatus) -> Result<SessionGoal> {
+        self.ensure_session_exists(session_id)?;
+        let mut meta = self.read_session_meta(session_id)?;
+        if meta.goal.as_deref().map(str::trim).unwrap_or("").is_empty() {
+            bail!("cannot update goal because this session has no goal");
+        }
+        meta.status = Some(status.as_str().to_string());
+        meta.updated_at = now_rfc3339();
+        self.write_session_meta(&meta)?;
+        session_goal_from_meta(&meta).context("session goal missing after status update")
+    }
+
+    pub fn clear_goal(&self, session_id: &str) -> Result<bool> {
+        self.ensure_session_exists(session_id)?;
+        let mut meta = self.read_session_meta(session_id)?;
+        if meta.goal.is_none()
+            && meta.goal_token_budget.is_none()
+            && meta.goal_tokens_used == 0
+            && meta.goal_time_used_seconds == 0
+            && meta.goal_created_at.is_none()
+        {
+            return Ok(false);
+        }
+        meta.goal = None;
+        meta.status = None;
+        meta.goal_token_budget = None;
+        meta.goal_tokens_used = 0;
+        meta.goal_time_used_seconds = 0;
+        meta.goal_created_at = None;
+        meta.updated_at = now_rfc3339();
+        self.write_session_meta(&meta)?;
+        Ok(true)
+    }
+
+    pub fn add_goal_usage(
+        &self,
+        session_id: &str,
+        token_delta: i64,
+        time_delta_seconds: i64,
+    ) -> Result<Option<SessionGoal>> {
+        self.ensure_session_exists(session_id)?;
+        let mut meta = self.read_session_meta(session_id)?;
+        if meta.goal.as_deref().map(str::trim).unwrap_or("").is_empty() {
+            return Ok(None);
+        }
+        let status = meta
+            .status
+            .as_deref()
+            .and_then(GoalStatus::parse)
+            .unwrap_or(GoalStatus::Active);
+        meta.goal_tokens_used = meta.goal_tokens_used.saturating_add(token_delta.max(0));
+        meta.goal_time_used_seconds = meta
+            .goal_time_used_seconds
+            .saturating_add(time_delta_seconds.max(0));
+        if status == GoalStatus::Active
+            && let Some(token_budget) = meta.goal_token_budget
+            && token_budget > 0
+            && meta.goal_tokens_used >= token_budget
+        {
+            meta.status = Some(GoalStatus::BudgetLimited.as_str().to_string());
+        }
+        meta.updated_at = now_rfc3339();
+        self.write_session_meta(&meta)?;
+        Ok(session_goal_from_meta(&meta))
     }
 
     pub fn list_main_session_metas(&self) -> Result<Vec<SessionMeta>> {
@@ -1649,7 +1825,61 @@ fn normalize_session_meta(mut meta: SessionMeta) -> SessionMeta {
     if meta.created_by.trim().is_empty() {
         meta.created_by = default_created_by();
     }
+    if meta.goal_tokens_used < 0 {
+        meta.goal_tokens_used = 0;
+    }
+    if meta.goal_time_used_seconds < 0 {
+        meta.goal_time_used_seconds = 0;
+    }
     meta
+}
+
+fn session_goal_from_meta(meta: &SessionMeta) -> Option<SessionGoal> {
+    let objective = meta.goal.as_deref()?.trim();
+    if objective.is_empty() {
+        return None;
+    }
+    let status = meta
+        .status
+        .as_deref()
+        .and_then(GoalStatus::parse)
+        .unwrap_or(GoalStatus::Active);
+    Some(SessionGoal {
+        session_id: meta.id.clone(),
+        objective: objective.to_string(),
+        status,
+        token_budget: meta.goal_token_budget,
+        tokens_used: meta.goal_tokens_used.max(0),
+        time_used_seconds: meta.goal_time_used_seconds.max(0),
+        created_at: meta
+            .goal_created_at
+            .clone()
+            .unwrap_or_else(|| meta.created_at.clone()),
+        updated_at: meta.updated_at.clone(),
+    })
+}
+
+fn validate_goal_objective(objective: &str) -> Result<()> {
+    if objective.trim().is_empty() {
+        bail!("goal objective must be a non-empty string");
+    }
+    const MAX_GOAL_OBJECTIVE_CHARS: usize = 20_000;
+    let actual = objective.chars().count();
+    if actual > MAX_GOAL_OBJECTIVE_CHARS {
+        bail!(
+            "goal objective is too long: {actual} characters. Limit: {MAX_GOAL_OBJECTIVE_CHARS} characters"
+        );
+    }
+    Ok(())
+}
+
+fn validate_goal_budget(token_budget: Option<i64>) -> Result<()> {
+    if let Some(token_budget) = token_budget
+        && token_budget <= 0
+    {
+        bail!("goal token budget must be positive when provided");
+    }
+    Ok(())
 }
 
 fn default_created_by() -> String {
@@ -1871,6 +2101,40 @@ mod tests {
                 }],
             }
         );
+        Ok(())
+    }
+
+    #[test]
+    fn goal_lifecycle_updates_session_meta() -> Result<()> {
+        let manager = test_manager()?;
+        let session_id = manager.create_session(Some("demo"), "system prompt")?;
+
+        assert!(manager.get_goal(&session_id)?.is_none());
+
+        let goal = manager.set_goal(&session_id, "ship goal support", Some(100))?;
+        assert_eq!(goal.objective, "ship goal support");
+        assert_eq!(goal.status, GoalStatus::Active);
+        assert_eq!(goal.token_budget, Some(100));
+        assert_eq!(goal.tokens_used, 0);
+
+        let goal = manager.add_goal_usage(&session_id, 40, 3)?.expect("goal");
+        assert_eq!(goal.tokens_used, 40);
+        assert_eq!(goal.time_used_seconds, 3);
+        assert_eq!(goal.status, GoalStatus::Active);
+
+        let paused = manager.update_goal_status(&session_id, GoalStatus::Paused)?;
+        assert_eq!(paused.status, GoalStatus::Paused);
+
+        let resumed = manager.update_goal_status(&session_id, GoalStatus::Active)?;
+        assert_eq!(resumed.status, GoalStatus::Active);
+
+        let limited = manager.add_goal_usage(&session_id, 60, 2)?.expect("goal");
+        assert_eq!(limited.status, GoalStatus::BudgetLimited);
+        assert_eq!(limited.tokens_used, 100);
+
+        assert!(manager.clear_goal(&session_id)?);
+        assert!(manager.get_goal(&session_id)?.is_none());
+        assert!(!manager.clear_goal(&session_id)?);
         Ok(())
     }
 

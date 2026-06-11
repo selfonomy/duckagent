@@ -274,6 +274,23 @@ snapshots were recorded after the target turn, DuckAgent restores old file
 contents or deletes newly-created files only if the current file still matches
 the recorded post-change checksum.
 
+Long-running goals keep the TUI working across turns until the objective is
+marked complete or blocked:
+
+```text
+/goal ship the new auth flow
+/goal
+/goal pause
+/goal resume
+/goal clear
+```
+
+While a goal is active, DuckAgent persists the objective in session metadata and
+automatically starts continuation turns when the agent finishes a turn without
+calling `update_goal` as `complete` or `blocked`. The model also gets native
+`get_goal`, `create_goal`, and `update_goal` tools so goal status changes are
+recorded in the session.
+
 ## 🗂️ Configuration Location
 
 ```text

@@ -6,6 +6,7 @@ use crate::input::InputState;
 use crate::markdown::{BLOCKQUOTE_MARKER, StreamRenderer, TABLE_MARKER};
 use crate::profiles;
 use crate::provider::{RuntimeProvider, get_model_capabilities, resolve_runtime_context_window};
+use crate::session::{GoalStatus, SessionGoal};
 use crate::session_control::{
     SessionControlCommand, SessionListItem, filter_session_items, format_rewind_list,
     format_session_list, paginate_session_items, parse_session_control_command,
@@ -62,6 +63,11 @@ const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         command: "/model",
         hint: "manage models",
         insert_text: "/model",
+    },
+    SlashCommandSpec {
+        command: "/goal",
+        hint: "set or view a long-running goal",
+        insert_text: "/goal ",
     },
 ];
 const STARTUP_AVATAR_FILENAMES: &[&str] = &[
@@ -555,6 +561,15 @@ struct SlashCommandSpec {
 #[derive(Clone)]
 struct SlashCommandPicker {
     selected_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GoalCommand {
+    Show,
+    Set { objective: String },
+    Clear,
+    Pause,
+    Resume,
 }
 
 struct ApprovalUiState {
@@ -1093,6 +1108,11 @@ impl ChatUi {
             return Ok(true);
         }
 
+        if let Some(command) = parse_goal_command(&user_text) {
+            self.handle_goal_command(command, stdout)?;
+            return Ok(true);
+        }
+
         if let Some(command) = parse_session_control_command(&user_text) {
             self.handle_session_control_command(command, stdout)?;
             return Ok(true);
@@ -1298,6 +1318,87 @@ impl ChatUi {
                 self.queue_history_entries(
                     self.with_message_gap(self.render_assistant_entries(&message)),
                 );
+            }
+        }
+        self.flush_pending_history();
+        self.redraw(stdout)?;
+        Ok(())
+    }
+
+    fn handle_goal_command(&mut self, command: GoalCommand, stdout: &mut io::Stdout) -> Result<()> {
+        match command {
+            GoalCommand::Show => {
+                let text = match self.agent.get_goal(&self.session_id)? {
+                    Some(goal) => format_goal_summary(&goal),
+                    None => "No active goal.\n\nUse `/goal <objective>` to start one.".to_string(),
+                };
+                self.queue_history_entries(
+                    self.with_message_gap(self.render_assistant_entries(&text)),
+                );
+            }
+            GoalCommand::Set { objective } => {
+                let goal = self.agent.set_goal(
+                    self.session_id.clone(),
+                    &objective,
+                    None,
+                    self.approval_provider.clone(),
+                )?;
+                self.status = "Goal started.".to_string();
+                self.queue_history_entries(self.with_message_gap(self.render_assistant_entries(
+                    &format!("Goal started.\n\n{}", format_goal_summary(&goal)),
+                )));
+            }
+            GoalCommand::Clear => {
+                let cleared = self.agent.clear_goal(&self.session_id)?;
+                let text = if cleared {
+                    "Goal cleared."
+                } else {
+                    "No goal to clear."
+                };
+                self.status = text.to_string();
+                self.queue_history_entries(
+                    self.with_message_gap(self.render_assistant_entries(text)),
+                );
+            }
+            GoalCommand::Pause => {
+                if self.agent.get_goal(&self.session_id)?.is_none() {
+                    self.status = "No goal to pause.".to_string();
+                    self.queue_history_entries(
+                        self.with_message_gap(self.render_assistant_entries("No goal to pause.")),
+                    );
+                    self.flush_pending_history();
+                    self.redraw(stdout)?;
+                    return Ok(());
+                }
+                let goal = self.agent.update_goal_status(
+                    self.session_id.clone(),
+                    GoalStatus::Paused,
+                    self.approval_provider.clone(),
+                )?;
+                self.status = "Goal paused.".to_string();
+                self.queue_history_entries(self.with_message_gap(self.render_assistant_entries(
+                    &format!("Goal paused.\n\n{}", format_goal_summary(&goal)),
+                )));
+            }
+            GoalCommand::Resume => {
+                if self.agent.get_goal(&self.session_id)?.is_none() {
+                    self.status = "No goal to resume.".to_string();
+                    self.queue_history_entries(
+                        self.with_message_gap(self.render_assistant_entries("No goal to resume.")),
+                    );
+                    self.flush_pending_history();
+                    self.redraw(stdout)?;
+                    return Ok(());
+                }
+                let goal = self.agent.update_goal_status(
+                    self.session_id.clone(),
+                    GoalStatus::Active,
+                    self.approval_provider.clone(),
+                )?;
+                self.status = "Goal resumed.".to_string();
+                self.queue_history_entries(self.with_message_gap(self.render_assistant_entries(
+                    &format!("Goal resumed.\n\n{}", format_goal_summary(&goal)),
+                )));
             }
         }
         self.flush_pending_history();
@@ -2918,6 +3019,66 @@ fn matching_slash_commands(input: &str) -> Vec<&'static SlashCommandSpec> {
         .collect()
 }
 
+fn parse_goal_command(text: &str) -> Option<GoalCommand> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || !trimmed.starts_with('/') {
+        return None;
+    }
+    let mut parts = trimmed.splitn(2, char::is_whitespace);
+    let command = parts.next()?.trim();
+    if command != "/goal" {
+        return None;
+    }
+    let args = parts.next().unwrap_or("").trim();
+    if args.is_empty() {
+        return Some(GoalCommand::Show);
+    }
+    match args.to_ascii_lowercase().as_str() {
+        "clear" => Some(GoalCommand::Clear),
+        "pause" => Some(GoalCommand::Pause),
+        "resume" => Some(GoalCommand::Resume),
+        _ => Some(GoalCommand::Set {
+            objective: args.to_string(),
+        }),
+    }
+}
+
+fn format_goal_summary(goal: &SessionGoal) -> String {
+    let mut out = String::new();
+    out.push_str("Goal:\n");
+    out.push_str(&goal.objective);
+    out.push_str("\n\nStatus: ");
+    out.push_str(goal.status.as_str());
+    out.push_str("\nUsage: ");
+    out.push_str(&goal.tokens_used.to_string());
+    if let Some(token_budget) = goal.token_budget {
+        out.push_str(" / ");
+        out.push_str(&token_budget.to_string());
+        out.push_str(" tokens");
+    } else {
+        out.push_str(" tokens");
+    }
+    if goal.time_used_seconds > 0 {
+        out.push_str("\nElapsed: ");
+        out.push_str(&format_elapsed_seconds(goal.time_used_seconds));
+    }
+    out
+}
+
+fn format_elapsed_seconds(seconds: i64) -> String {
+    let seconds = seconds.max(0);
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let secs = seconds % 60;
+    if hours > 0 {
+        format!("{hours}h {minutes}m {secs}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {secs}s")
+    } else {
+        format!("{secs}s")
+    }
+}
+
 fn visible_history_line_index(row: u16, visible_rows: u16, line_count: usize) -> Option<usize> {
     let visible_rows = visible_rows as usize;
     let row = row as usize;
@@ -4078,8 +4239,33 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["/model"]
         );
+        assert_eq!(
+            matching_slash_commands("/g")
+                .into_iter()
+                .map(|spec| spec.command)
+                .collect::<Vec<_>>(),
+            vec!["/goal"]
+        );
         assert!(matching_slash_commands("/x").is_empty());
         assert!(matching_slash_commands("/new title").is_empty());
+    }
+
+    #[test]
+    fn parses_goal_commands() {
+        assert_eq!(parse_goal_command("/goal"), Some(GoalCommand::Show));
+        assert_eq!(parse_goal_command("/goal clear"), Some(GoalCommand::Clear));
+        assert_eq!(parse_goal_command("/goal pause"), Some(GoalCommand::Pause));
+        assert_eq!(
+            parse_goal_command("/goal resume"),
+            Some(GoalCommand::Resume)
+        );
+        assert_eq!(
+            parse_goal_command("/goal ship long running tasks"),
+            Some(GoalCommand::Set {
+                objective: "ship long running tasks".to_string()
+            })
+        );
+        assert_eq!(parse_goal_command("/goals"), None);
     }
 
     #[test]

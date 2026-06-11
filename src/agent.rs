@@ -15,11 +15,13 @@ use crate::instructions::{
 use crate::memory::MemoryStore;
 use crate::provider::{RuntimeProvider, resolve_runtime_context_window};
 use crate::session::{
-    RewindListItem, RewindResult, SessionManager, SessionMessage, SessionRole, SessionRuleHit,
+    GoalStatus, RewindListItem, RewindResult, SessionGoal, SessionManager, SessionMessage,
+    SessionRole, SessionRuleHit,
 };
 use crate::tools::{
-    AgentToolCallbacks, CallCapabilityInput, MessageType, UiMessage, agent_tools,
-    call_capability_shared_context, model_response_to_outcome,
+    AgentToolCallbacks, CallCapabilityInput, CreateGoalInput, GoalToolCallbacks, MessageType,
+    UiMessage, UpdateGoalInput, agent_tools, call_capability_shared_context,
+    model_response_to_outcome,
 };
 use crate::utils::{count_tool_tokens_cl100k, estimate_tokens_rough};
 use anyhow::{Result, bail};
@@ -41,6 +43,7 @@ const MAIN_CAPABILITY_MCP_ITEM_TEMPLATE: &str = include_str!("prompts/main-capab
 const MAIN_CAPABILITY_MCP_EMPTY_TEMPLATE: &str =
     include_str!("prompts/main-capability-mcp-empty.md");
 const SESSION_TITLE_SYSTEM_PROMPT: &str = include_str!("prompts/session-title-system.md");
+const GOAL_CONTINUATION_TEMPLATE: &str = include_str!("prompts/goal-continuation.md");
 #[derive(Debug, Clone)]
 pub enum AgentEvent {
     StatusChanged {
@@ -161,6 +164,13 @@ impl SubmittedUserMessage {
             source: UserMessageSource::Cron(metadata),
         }
     }
+
+    pub fn goal_continuation(text: String) -> Self {
+        Self {
+            text,
+            source: UserMessageSource::GoalContinuation,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -168,6 +178,7 @@ pub enum UserMessageSource {
     Tui,
     Gateway(GatewayUserMessageMetadata),
     Cron(CronUserMessageMetadata),
+    GoalContinuation,
 }
 
 #[derive(Debug, Clone)]
@@ -300,7 +311,9 @@ impl AgentRuntime {
         user_message: SubmittedUserMessage,
         approval_provider: Arc<dyn ApprovalProvider>,
     ) {
-        self.maybe_generate_title(&session_id, user_message.text.clone());
+        if !matches!(user_message.source, UserMessageSource::GoalContinuation) {
+            self.maybe_generate_title(&session_id, user_message.text.clone());
+        }
         let should_start = {
             let mut state = self.state.lock().expect("runtime state mutex poisoned");
             let session_state = state.sessions.entry(session_id.clone()).or_default();
@@ -333,6 +346,43 @@ impl AgentRuntime {
                 || !session_state.pending_user_inputs.is_empty()
                 || !session_state.pending_user_steers.is_empty()
         }
+    }
+
+    pub fn get_goal(&self, session_id: &str) -> Result<Option<SessionGoal>> {
+        self.session_manager.get_goal(session_id)
+    }
+
+    pub fn set_goal(
+        &self,
+        session_id: String,
+        objective: &str,
+        token_budget: Option<i64>,
+        approval_provider: Arc<dyn ApprovalProvider>,
+    ) -> Result<SessionGoal> {
+        let goal = self
+            .session_manager
+            .set_goal(&session_id, objective, token_budget)?;
+        self.continue_goal_if_idle(session_id, approval_provider)?;
+        Ok(goal)
+    }
+
+    pub fn update_goal_status(
+        &self,
+        session_id: String,
+        status: GoalStatus,
+        approval_provider: Arc<dyn ApprovalProvider>,
+    ) -> Result<SessionGoal> {
+        let goal = self
+            .session_manager
+            .update_goal_status(&session_id, status)?;
+        if status == GoalStatus::Active {
+            self.continue_goal_if_idle(session_id, approval_provider)?;
+        }
+        Ok(goal)
+    }
+
+    pub fn clear_goal(&self, session_id: &str) -> Result<bool> {
+        self.session_manager.clear_goal(session_id)
     }
 
     pub fn rewind_list(&self, session_id: &str) -> Result<Vec<RewindListItem>> {
@@ -377,6 +427,7 @@ impl AgentRuntime {
 
         let runtime = self.clone();
         thread::spawn(move || {
+            let turn_started_at = std::time::Instant::now();
             runtime.event_bus.publish(AgentEvent::MainTurnStarted {
                 session_id: session_id.clone(),
             });
@@ -385,19 +436,40 @@ impl AgentRuntime {
                 status: "Agent is thinking...".to_string(),
             });
 
-            let result = (|| -> Result<()> {
+            let result = (|| -> Result<usize> {
                 runtime.run_main_turn(
                     &session_id,
                     &dispatch.composed_user_text,
                     dispatch.approval_provider.clone(),
                 )
             })();
+            let token_delta = result
+                .as_ref()
+                .copied()
+                .unwrap_or_else(|_| count_tokens_with_retry(&dispatch.composed_user_text));
+            let elapsed_seconds = turn_started_at.elapsed().as_secs().min(i64::MAX as u64) as i64;
+            if let Err(err) = runtime.session_manager.add_goal_usage(
+                &session_id,
+                token_delta.min(i64::MAX as usize) as i64,
+                elapsed_seconds,
+            ) {
+                runtime.event_bus.publish(AgentEvent::Error {
+                    session_id: session_id.clone(),
+                    message: format!("Goal usage accounting failed: {err:#}"),
+                });
+            }
 
             if let Err(err) = &result {
                 runtime.event_bus.publish(AgentEvent::Error {
                     session_id: session_id.clone(),
                     message: format!("{err:#}"),
                 });
+                if let Err(err) = runtime.block_active_goal_after_turn_error(&session_id) {
+                    runtime.event_bus.publish(AgentEvent::Error {
+                        session_id: session_id.clone(),
+                        message: format!("Failed to block goal after turn error: {err:#}"),
+                    });
+                }
             }
             if let UserMessageSource::Cron(metadata) = &dispatch.source {
                 runtime.event_bus.publish(AgentEvent::CronRunFinished {
@@ -427,6 +499,15 @@ impl AgentRuntime {
                 }
                 session_state.main_turn_running = false;
             }
+            if let Ok(Some(goal)) = runtime.session_manager.get_goal(&session_id)
+                && should_enqueue_goal_continuation(result.is_ok(), &goal)
+            {
+                let _ = runtime.enqueue_goal_continuation_if_idle(
+                    session_id.clone(),
+                    dispatch.approval_provider.clone(),
+                    &goal,
+                );
+            }
             runtime.event_bus.publish(AgentEvent::StatusChanged {
                 session_id: session_id.clone(),
                 status: "Ready".to_string(),
@@ -439,12 +520,67 @@ impl AgentRuntime {
         });
     }
 
+    fn continue_goal_if_idle(
+        &self,
+        session_id: String,
+        approval_provider: Arc<dyn ApprovalProvider>,
+    ) -> Result<bool> {
+        let Some(goal) = self.session_manager.get_goal(&session_id)? else {
+            return Ok(false);
+        };
+        if goal.status != GoalStatus::Active {
+            return Ok(false);
+        }
+        let queued =
+            self.enqueue_goal_continuation_if_idle(session_id.clone(), approval_provider, &goal)?;
+        if queued {
+            self.maybe_start_next_main_turn(session_id);
+        }
+        Ok(queued)
+    }
+
+    fn enqueue_goal_continuation_if_idle(
+        &self,
+        session_id: String,
+        approval_provider: Arc<dyn ApprovalProvider>,
+        goal: &SessionGoal,
+    ) -> Result<bool> {
+        let message =
+            SubmittedUserMessage::goal_continuation(build_goal_continuation_message(goal));
+        let mut state = self.state.lock().expect("runtime state mutex poisoned");
+        let session_state = state.sessions.entry(session_id).or_default();
+        if session_state.main_turn_running
+            || !session_state.pending_user_inputs.is_empty()
+            || !session_state.pending_user_steers.is_empty()
+        {
+            return Ok(false);
+        }
+        session_state
+            .pending_user_inputs
+            .push_back(PendingUserInput {
+                message,
+                approval_provider,
+            });
+        Ok(true)
+    }
+
+    fn block_active_goal_after_turn_error(&self, session_id: &str) -> Result<()> {
+        let Some(goal) = self.session_manager.get_goal(session_id)? else {
+            return Ok(());
+        };
+        if goal.status == GoalStatus::Active {
+            self.session_manager
+                .update_goal_status(session_id, GoalStatus::Blocked)?;
+        }
+        Ok(())
+    }
+
     fn run_main_turn(
         &self,
         session_id: &str,
         user_text: &str,
         approval_provider: Arc<dyn ApprovalProvider>,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         {
             let mut policy = self
                 .approval_policy
@@ -473,9 +609,10 @@ impl AgentRuntime {
         self.session_manager
             .append_user_turn_marker(session_id, user_message.id(), user_text)?;
 
-        self.run_main_agent_loop(session_id, approval_provider, registry)?;
+        let token_delta = estimate_session_message_tokens(&user_message)
+            + self.run_main_agent_loop(session_id, approval_provider, registry)?;
 
-        Ok(())
+        Ok(token_delta)
     }
 
     fn run_main_agent_loop(
@@ -483,9 +620,10 @@ impl AgentRuntime {
         session_id: &str,
         approval_provider: Arc<dyn ApprovalProvider>,
         registry: RuntimeToolRegistry,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         let shared_context = Arc::new(Mutex::new(Vec::<String>::new()));
         let instruction_seen = Arc::new(Mutex::new(HashSet::<(String, String)>::new()));
+        let mut token_delta = 0usize;
         loop {
             let agent_messages = self.projected_main_model_messages(session_id)?;
             let runtime = self.clone();
@@ -495,6 +633,7 @@ impl AgentRuntime {
             let runtime_registry = registry.clone();
             let runtime_shared_context = shared_context.clone();
             let runtime_instruction_seen = instruction_seen.clone();
+            let goal_callbacks = self.goal_tool_callbacks(session_id.to_string());
             let callbacks = AgentToolCallbacks {
                 call_capability: Arc::new(move |input| {
                     runtime.run_main_call_capability(
@@ -506,6 +645,7 @@ impl AgentRuntime {
                         runtime_instruction_seen.clone(),
                     )
                 }),
+                goal: Some(goal_callbacks),
             };
 
             let event_bus = self.event_bus.clone();
@@ -555,6 +695,8 @@ impl AgentRuntime {
             }
 
             for session_message in outcome.session_messages {
+                token_delta =
+                    token_delta.saturating_add(estimate_session_message_tokens(&session_message));
                 self.session_manager
                     .append_message(session_id, &session_message)?;
                 self.emit_approval_events(session_id, &session_message);
@@ -566,6 +708,8 @@ impl AgentRuntime {
                     SessionRole::Assistant,
                     &final_answer,
                 )?;
+                token_delta =
+                    token_delta.saturating_add(estimate_session_message_tokens(&assistant_message));
 
                 self.event_bus.publish(AgentEvent::Message {
                     session_id: session_id.to_string(),
@@ -577,7 +721,7 @@ impl AgentRuntime {
                 if self.append_pending_user_steer_message(session_id)? {
                     continue;
                 }
-                return Ok(());
+                return Ok(token_delta);
             }
 
             if !had_tool_activity {
@@ -782,6 +926,7 @@ impl AgentRuntime {
                 };
                 memory_builtin::execute_memory_builtin(input, &context)
             }),
+            goal: None,
         };
 
         let model_response = self.client.generate_streaming_with_tools(
@@ -809,6 +954,38 @@ impl AgentRuntime {
         self.session_manager
             .update_agent_status(&agent_id, status)?;
         Ok(changed.load(Ordering::SeqCst))
+    }
+
+    fn goal_tool_callbacks(&self, session_id: String) -> GoalToolCallbacks {
+        let get_runtime = self.clone();
+        let get_session_id = session_id.clone();
+        let create_runtime = self.clone();
+        let create_session_id = session_id.clone();
+        let update_runtime = self.clone();
+        GoalToolCallbacks {
+            get_goal: Arc::new(move || get_runtime.session_manager.get_goal(&get_session_id)),
+            create_goal: Arc::new(move |input: CreateGoalInput| {
+                if let Some(existing) = create_runtime
+                    .session_manager
+                    .get_goal(&create_session_id)?
+                    && !existing.status.is_terminal()
+                {
+                    bail!(
+                        "cannot create a new goal because this session has an unfinished goal; complete the existing goal first"
+                    );
+                }
+                create_runtime.session_manager.set_goal(
+                    &create_session_id,
+                    &input.objective,
+                    input.token_budget,
+                )
+            }),
+            update_goal: Arc::new(move |input: UpdateGoalInput| {
+                update_runtime
+                    .session_manager
+                    .update_goal_status(&session_id, input.status.into_goal_status())
+            }),
+        }
     }
 
     fn maybe_generate_title(&self, session_id: &str, user_text: String) {
@@ -1036,6 +1213,30 @@ fn current_time_context_block() -> DynamicContextBlock {
     }
 }
 
+fn build_goal_continuation_message(goal: &SessionGoal) -> String {
+    let token_budget = goal
+        .token_budget
+        .map(|budget| budget.to_string())
+        .unwrap_or_else(|| "none".to_string());
+    let remaining_tokens = goal
+        .token_budget
+        .map(|budget| (budget - goal.tokens_used).max(0).to_string())
+        .unwrap_or_else(|| "unbounded".to_string());
+    render_prompt_template(
+        GOAL_CONTINUATION_TEMPLATE,
+        &[
+            ("objective", goal.objective.clone()),
+            ("tokens_used", goal.tokens_used.to_string()),
+            ("token_budget", token_budget),
+            ("remaining_tokens", remaining_tokens),
+        ],
+    )
+}
+
+fn should_enqueue_goal_continuation(turn_succeeded: bool, goal: &SessionGoal) -> bool {
+    turn_succeeded && goal.status == GoalStatus::Active
+}
+
 fn build_main_user_message(user_text: Option<&str>) -> String {
     user_text
         .map(str::trim)
@@ -1076,6 +1277,9 @@ fn build_user_message_steer(messages: &[SubmittedUserMessage]) -> String {
                 out.push_str(&format!("job_id: {}\n", metadata.job_id));
                 out.push_str(&format!("run_id: {}\n", metadata.run_id));
                 out.push_str(&format!("scheduled_for: {}\n", metadata.scheduled_for));
+            }
+            UserMessageSource::GoalContinuation => {
+                out.push_str("source: goal_continuation\n");
             }
         }
         out.push_str("message:\n");
@@ -1178,6 +1382,45 @@ fn estimate_model_messages_tokens(messages: &[crate::model::Message]) -> usize {
         .sum()
 }
 
+fn estimate_session_message_tokens(message: &SessionMessage) -> usize {
+    let text = match message {
+        SessionMessage::Message { content, .. } => content
+            .iter()
+            .map(|item| match item {
+                crate::session::ContentItem::InputText { text }
+                | crate::session::ContentItem::OutputText { text } => text.as_str(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        SessionMessage::ToolCall {
+            content,
+            name,
+            input,
+            ..
+        } => format!(
+            "{}\n{}\n{}",
+            content.as_deref().unwrap_or_default(),
+            name,
+            input
+        ),
+        SessionMessage::ToolResult { output, .. } => output.clone(),
+        SessionMessage::ToolApprovalRequest {
+            command,
+            rule_hits,
+            options,
+            ..
+        } => format!("{command}\n{rule_hits:?}\n{options:?}"),
+        SessionMessage::ToolApprovalDecision {
+            command,
+            decision,
+            approved,
+            ..
+        } => format!("{command}\n{decision}\n{approved}"),
+        SessionMessage::Reasoning { content, .. } => content.clone(),
+    };
+    count_tokens_with_retry(&text)
+}
+
 fn count_tokens_with_retry(text: &str) -> usize {
     count_tool_tokens_cl100k(text)
         .or_else(|_| count_tool_tokens_cl100k(text))
@@ -1261,6 +1504,18 @@ mod tests {
         assert_eq!(message.msg_type, MessageType::Assistant);
         assert_eq!(message.content, "Let me create that file.");
         assert!(ui_message_for_tool_turn_text(" \n\t ").is_none());
+    }
+
+    #[test]
+    fn goal_continuation_is_not_enqueued_after_turn_error() {
+        let active = test_goal_with_status(GoalStatus::Active);
+        let paused = test_goal_with_status(GoalStatus::Paused);
+        let blocked = test_goal_with_status(GoalStatus::Blocked);
+
+        assert!(should_enqueue_goal_continuation(true, &active));
+        assert!(!should_enqueue_goal_continuation(false, &active));
+        assert!(!should_enqueue_goal_continuation(true, &paused));
+        assert!(!should_enqueue_goal_continuation(true, &blocked));
     }
 
     #[test]
@@ -1415,5 +1670,18 @@ mod tests {
             state.intervals[session_id],
             MEMORY_REVIEW_BASE_INTERVAL_TURNS
         );
+    }
+
+    fn test_goal_with_status(status: GoalStatus) -> SessionGoal {
+        SessionGoal {
+            session_id: "session".to_string(),
+            objective: "test goal".to_string(),
+            status,
+            token_budget: None,
+            tokens_used: 0,
+            time_used_seconds: 0,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+        }
     }
 }

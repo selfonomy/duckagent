@@ -10,7 +10,7 @@ Run DuckAgent locally:
 duck
 ```
 
-That starts the TUI: local chat, streaming output, approvals, model/profile switching, slash commands, and hands-on workspace work. If the active profile has no usable model, DuckAgent opens setup first. Setup collects the provider, auth, model, optional context window, and web provider choices. After setup, DuckAgent enters the terminal UI.
+That starts the TUI: local chat, streaming output, approvals, model/profile switching, slash commands, persistent goals, and hands-on workspace work. If the active profile has no usable model, DuckAgent opens setup first. Setup collects the provider, auth, model, optional context window, and web provider choices. After setup, DuckAgent enters the terminal UI.
 
 DuckAgent ships with built-in web search. The default search route uses Exa MCP so you can try search immediately; add an Exa key later if you want your own quota.
 
@@ -52,6 +52,15 @@ Use `--sandbox` to temporarily select a sandbox preset for one process:
 ```bash
 duck --sandbox readonly
 ```
+
+For work that should continue across multiple agent turns, start a goal:
+
+```text
+/goal migrate the docs site to the new theme
+```
+
+DuckAgent keeps pursuing the goal until the agent marks it complete or blocked,
+or you run `/goal pause` or `/goal clear`.
 
 ## What setup writes
 
